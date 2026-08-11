@@ -1,0 +1,39 @@
+# Local planning documents
+PLAN.md
+
+# macOS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor and operating-system files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+Thumbs.db
+Desktop.ini
+
+# Logs and local environment files
+*.log
+.env
+.env.*
+!.env.example
+
+# JavaScript / Electron artifacts
+node_modules/
+dist/
+out/
+release/
+coverage/
+*.tsbuildinfo
+
+# Rust / Tauri artifacts
+target/
+src-tauri/target/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
