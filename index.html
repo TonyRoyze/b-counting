@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101815" />
+    <meta
+      name="description"
+      content="B-Counting, an accessible command-driven accounting application."
+    />
+    <title>B-Counting</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <a class="brand" href="/" aria-label="B-Counting home">
+          <span class="brand-mark" aria-hidden="true">B</span>
+          <span>B-Counting</span>
+        </a>
+        <span class="local-badge">Local only</span>
+      </header>
+
+      <section class="command-panel" aria-labelledby="welcome-heading">
+        <p class="eyebrow">Accessible accounting</p>
+        <h1 id="welcome-heading">What would you like to do?</h1>
+        <p class="introduction" id="command-help">
+          Type a command below. Type <kbd>help</kbd> to list the available commands.
+        </p>
+
+        <form class="command-form" id="command-form">
+          <label for="command-input">Command</label>
+          <div class="command-control">
+            <span class="prompt-symbol" aria-hidden="true">&gt;</span>
+            <input
+              id="command-input"
+              name="command"
+              type="text"
+              autocomplete="off"
+              autocapitalize="none"
+              spellcheck="false"
+              aria-describedby="command-help"
+              autofocus
+            />
+            <button type="submit">Run</button>
+          </div>
+        </form>
+
+        <p class="keyboard-hint">
+          Press <kbd>Enter</kbd> to run a command.
+        </p>
+
+        <div class="visually-hidden" id="announcer" aria-live="polite"></div>
+      </section>
+
+      <footer>
+        <p>Your financial data stays on this device.</p>
+      </footer>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
