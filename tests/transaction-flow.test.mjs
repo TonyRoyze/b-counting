@@ -19,9 +19,11 @@ test('completes a transaction after explicit review', () => {
   const categories = flow.submit('Internet')
   assert.match(categories.prompt, /category/i)
   assert.equal(categories.options.at(-1), 'Add new category…')
-  assert.match(flow.submit('Uncategorized').lines.join(' '), /Uncategorized/)
+  const review = flow.submit('Uncategorized')
+  assert.match(review.lines.join(' '), /Uncategorized/)
+  assert.deepEqual(review.options, ['Save', 'Edit', 'Cancel'])
 
-  const saved = flow.submit('save')
+  const saved = flow.submit('Save')
   assert.equal(saved.done, true)
   assert.deepEqual(saved.savedDraft, {
     type: 'expense',
@@ -61,8 +63,23 @@ test('edits one field and returns to review', () => {
   flow.submit('amount')
 
   const review = flow.submit('12.50')
-  assert.match(review.prompt, /Save this transaction/)
+  assert.match(review.prompt, /Choose an action/)
+  assert.deepEqual(review.options, ['Save', 'Edit', 'Cancel'])
   assert.match(review.lines.join(' '), /12.50 LKR/)
+})
+
+test('offers Save, Edit, and Cancel as selectable review actions', () => {
+  const flow = new NewTransactionFlow()
+  flow.start()
+  flow.submit('income')
+  flow.submit('100')
+  flow.submit('Salary')
+
+  const review = flow.submit('Salary')
+  assert.deepEqual(review.options, ['Save', 'Edit', 'Cancel'])
+
+  const edit = flow.submit(review.options[1])
+  assert.match(edit.prompt, /What would you like to edit/)
 })
 
 test('cancels without producing a transaction', () => {

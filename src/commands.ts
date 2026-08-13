@@ -21,7 +21,7 @@ export const commands: readonly CommandDefinition[] = [
   },
   {
     name: 'settings',
-    aliases: ['set'],
+    aliases: ['st', 'set'],
     description: 'Change speech, currency, and appearance preferences.',
     usage: 'settings',
   },
@@ -33,13 +33,13 @@ export const commands: readonly CommandDefinition[] = [
   },
   {
     name: 'about',
-    aliases: ['version'],
+    aliases: ['a', 'version'],
     description: 'Show information about B-Counting.',
     usage: 'about',
   },
   {
     name: 'clear',
-    aliases: ['cls'],
+    aliases: ['c', 'cl', 'cls'],
     description: 'Clear the terminal history.',
     usage: 'clear',
   },
@@ -62,6 +62,12 @@ export function parseCommand(input: string): ParsedCommand | null {
 export function findCommand(name: string): CommandDefinition | undefined {
   const canonicalName = commandNames.get(name.toLowerCase())
   return commands.find((command) => command.name === canonicalName)
+}
+
+export function primaryShortcut(command: CommandDefinition): string {
+  return command.aliases.reduce((shortest, alias) =>
+    alias.length < shortest.length ? alias : shortest,
+  )
 }
 
 export function suggestCommand(input: string): CommandName | null {

@@ -1,5 +1,11 @@
 import './style.css'
-import { commands, findCommand, parseCommand, suggestCommand } from './commands'
+import {
+  commands,
+  findCommand,
+  parseCommand,
+  primaryShortcut,
+  suggestCommand,
+} from './commands'
 import {
   createTransaction,
   expenseCategories,
@@ -232,11 +238,19 @@ function runCommand(input: string): void {
   }
 
   const lines = definition
-    ? [definition.description, `Usage: ${definition.usage}`]
+    ? [
+        definition.description,
+        `Usage: ${definition.usage}`,
+        `Shortcut: ${primaryShortcut(definition)}`,
+      ]
     : [
         'Available commands:',
-        ...commands.map((command) => `${command.name.padEnd(8)} ${command.description}`),
+        ...commands.map(
+          (command) =>
+            `${primaryShortcut(command).padEnd(2)}  ${command.name.padEnd(8)} ${command.description}`,
+        ),
         '',
+        'Type a shortcut and press Enter.',
         'Use Up and Down Arrow to revisit previous commands.',
       ]
 

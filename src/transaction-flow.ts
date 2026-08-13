@@ -47,6 +47,7 @@ export const expenseCategories = [
 
 const uncategorizedOption = 'Uncategorized'
 const addCategoryOption = 'Add new category…'
+const reviewOptions = ['Save', 'Edit', 'Cancel'] as const
 
 const prompts: Record<FlowStep, string> = {
   type: 'Transaction type (income or expense):',
@@ -54,7 +55,7 @@ const prompts: Record<FlowStep, string> = {
   description: 'Description:',
   category: 'Choose a category. Use Up and Down Arrow, then press Enter:',
   'new-category': 'New category name:',
-  review: 'Save this transaction? (save, edit, or cancel):',
+  review: 'Choose an action. Use Up and Down Arrow, then press Enter:',
   edit: 'What would you like to edit? (type, amount, description, or category):',
 }
 
@@ -255,7 +256,12 @@ export class NewTransactionFlow {
       lines,
       prompt: prompts[this.step],
       step: order[this.step],
-      options: this.step === 'category' ? this.categoryOptions() : undefined,
+      options:
+        this.step === 'category'
+          ? this.categoryOptions()
+          : this.step === 'review'
+            ? reviewOptions
+            : undefined,
     }
   }
 
