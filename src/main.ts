@@ -8,8 +8,6 @@ import {
 } from './commands'
 import {
   createTransaction,
-  expenseCategories,
-  incomeCategories,
   NewTransactionFlow,
   type FlowResponse,
   type Transaction,
@@ -22,6 +20,15 @@ import {
   type Currency,
   type Verbosity,
 } from './settings'
+import {
+  addCustomCategory,
+  categoryUsageFor,
+  customCategoriesFor,
+  loadCategoryCatalog,
+  recordCategoryUse,
+  saveCategoryCatalog,
+  type CategoryCatalog,
+} from './categories'
 
 const form = requireElement<HTMLFormElement>('#command-form')
 const commandInput = requireElement<HTMLInputElement>('#command-input')
@@ -46,12 +53,12 @@ const appearanceInput = requireElement<HTMLSelectElement>('#appearance')
 
 const commandHistory: string[] = []
 const transactions: Transaction[] = []
-const customCategories: string[] = []
 let historyIndex = 0
 let transactionFlow: NewTransactionFlow | null = null
 let currentFlowResponse: FlowResponse | null = null
 let selectedOptionIndex = 0
 let settings: AppSettings = loadSettings(window.localStorage)
+let categoryCatalog: CategoryCatalog = loadCategoryCatalog(window.localStorage)
 
 applySettings()
 
@@ -203,7 +210,17 @@ function runCommand(input: string): void {
   }
 
   if (parsedCommand.name === 'new') {
-    transactionFlow = new NewTransactionFlow(settings.currency, customCategories)
+    transactionFlow = new NewTransactionFlow(
+      settings.currency,
+      {
+        income: customCategoriesFor(categoryCatalog, 'income'),
+        expense: customCategoriesFor(categoryCatalog, 'expense'),
+      },
+      {
+        income: categoryUsageFor(categoryCatalog, 'income'),
+        expense: categoryUsageFor(categoryCatalog, 'expense'),
+      },
+    )
     const response = transactionFlow.start()
     appendEntry(input, response.lines)
     showFlowPrompt(response)
@@ -268,6 +285,15 @@ function continueTransactionFlow(input: string): void {
   const response = transactionFlow.submit(submittedInput)
   appendFlowResponse(submittedInput, response)
 
+  if (response.createdCategory) {
+    categoryCatalog = addCustomCategory(
+      categoryCatalog,
+      response.createdCategory.name,
+      response.createdCategory.type,
+    )
+    persistCategoryCatalog()
+  }
+
   if (response.savedDraft) {
     const transaction = createTransaction(
       response.savedDraft,
@@ -275,7 +301,14 @@ function continueTransactionFlow(input: string): void {
       settings.currency,
     )
     transactions.push(transaction)
-    rememberCustomCategory(transaction.category)
+    if (transaction.category) {
+      categoryCatalog = recordCategoryUse(
+        categoryCatalog,
+        transaction.category,
+        transaction.type,
+      )
+      persistCategoryCatalog()
+    }
     appendSystemLine(`Transaction ID ${transaction.id}.`)
     announce(`${response.announcement ?? response.lines.join(' ')} Transaction ID ${transaction.id}. Command prompt.`)
     finishTransactionFlow()
@@ -379,18 +412,9 @@ function clearFlowOptions(): void {
   commandInput.removeAttribute('aria-activedescendant')
 }
 
-function rememberCustomCategory(category: string | null): void {
-  if (!category) {
-    return
-  }
-
-  const predefinedCategories = [...incomeCategories, ...expenseCategories]
-  const alreadyExists = [...predefinedCategories, ...customCategories].some(
-    (item) => item.toLowerCase() === category.toLowerCase(),
-  )
-
-  if (!alreadyExists) {
-    customCategories.push(category)
+function persistCategoryCatalog(): void {
+  if (!saveCategoryCatalog(window.localStorage, categoryCatalog)) {
+    appendSystemLine('Warning: category changes could not be saved on this device.')
   }
 }
 

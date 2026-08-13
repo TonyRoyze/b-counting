@@ -32,6 +32,7 @@ export interface FlowResponse {
   savedDraft?: TransactionDraft
   error?: boolean
   options?: readonly string[]
+  createdCategory?: { name: string; type: TransactionType }
 }
 
 export const incomeCategories = ['Salary', 'Other income'] as const
@@ -45,6 +46,11 @@ export const expenseCategories = [
   'Entertainment',
   'Other expense',
 ] as const
+
+type CategoriesByType = Partial<Record<TransactionType, readonly string[]>>
+type CategoryUsageByType = Partial<
+  Record<TransactionType, Readonly<Record<string, number>>>
+>
 
 const uncategorizedOption = 'Uncategorized'
 const addCategoryOption = 'Add new category…'
@@ -67,11 +73,17 @@ export class NewTransactionFlow {
   private draft: TransactionDraft = {}
   private editing = false
   private readonly currency: string
-  private readonly customCategories: readonly string[]
+  private readonly customCategories: readonly string[] | CategoriesByType
+  private readonly categoryUsage: Readonly<Record<string, number>> | CategoryUsageByType
 
-  constructor(currency = 'LKR', customCategories: readonly string[] = []) {
+  constructor(
+    currency = 'LKR',
+    customCategories: readonly string[] | CategoriesByType = [],
+    categoryUsage: Readonly<Record<string, number>> | CategoryUsageByType = {},
+  ) {
     this.currency = currency
     this.customCategories = customCategories
+    this.categoryUsage = categoryUsage
   }
 
   start(): FlowResponse {
@@ -192,10 +204,13 @@ export class NewTransactionFlow {
     this.draft.category = input
     this.editing = false
     this.step = 'review'
-    return this.nextPrompt(
+    return {
+      ...this.nextPrompt(
       ['Category created.', 'Review:', this.summary()],
       `Category created. Review. ${this.spokenSummary()}`,
-    )
+      ),
+      createdCategory: { name: input, type: this.draft.type ?? 'expense' },
+    }
   }
 
   private acceptReview(input: string): FlowResponse {
@@ -298,15 +313,49 @@ export class NewTransactionFlow {
   }
 
   private categoryOptions(): readonly string[] {
-    const defaults = this.draft.type === 'income' ? incomeCategories : expenseCategories
-    const uniqueCustomCategories = this.customCategories.filter(
+    const type = this.draft.type ?? 'expense'
+    const defaults = type === 'income' ? incomeCategories : expenseCategories
+    const configuredCategories: readonly string[] = isCategoryList(this.customCategories)
+      ? this.customCategories
+      : this.customCategories[type] ?? []
+    const configuredUsage = isUsageByType(this.categoryUsage)
+      ? this.categoryUsage[type] ?? {}
+      : this.categoryUsage
+    const uniqueCustomCategories = configuredCategories.filter(
       (category, index, categories) =>
         categories.findIndex((item) => item.toLowerCase() === category.toLowerCase()) === index &&
         !defaults.some((item) => item.toLowerCase() === category.toLowerCase()),
     )
 
-    return [...defaults, ...uniqueCustomCategories, uncategorizedOption, addCategoryOption]
+    const categories = [...defaults, ...uniqueCustomCategories]
+    const originalPosition = new Map(
+      categories.map((category, index) => [category.toLowerCase(), index]),
+    )
+
+    categories.sort((left, right) => {
+      const usageDifference =
+        (configuredUsage[right.toLowerCase()] ?? 0) -
+        (configuredUsage[left.toLowerCase()] ?? 0)
+
+      return usageDifference ||
+        (originalPosition.get(left.toLowerCase()) ?? 0) -
+          (originalPosition.get(right.toLowerCase()) ?? 0)
+    })
+
+    return [...categories, uncategorizedOption, addCategoryOption]
   }
+}
+
+function isUsageByType(
+  usage: Readonly<Record<string, number>> | CategoryUsageByType,
+): usage is CategoryUsageByType {
+  return typeof usage.income === 'object' || typeof usage.expense === 'object'
+}
+
+function isCategoryList(
+  categories: readonly string[] | CategoriesByType,
+): categories is readonly string[] {
+  return Array.isArray(categories)
 }
 
 export function createTransaction(

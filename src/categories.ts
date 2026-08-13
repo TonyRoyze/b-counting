@@ -1,0 +1,151 @@
+import type { TransactionType } from './transaction-flow'
+
+export interface CustomCategory {
+  name: string
+  type: TransactionType
+}
+
+export interface CategoryCatalog {
+  custom: CustomCategory[]
+  usage: Record<string, number>
+}
+
+interface CategoryStorage {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+}
+
+export const CATEGORIES_KEY = 'b-counting.categories.v1'
+
+export function loadCategoryCatalog(storage: CategoryStorage): CategoryCatalog {
+  try {
+    const stored = storage.getItem(CATEGORIES_KEY)
+    return stored ? sanitizeCategoryCatalog(JSON.parse(stored) as unknown) : emptyCatalog()
+  } catch {
+    return emptyCatalog()
+  }
+}
+
+export function saveCategoryCatalog(
+  storage: CategoryStorage,
+  catalog: CategoryCatalog,
+): boolean {
+  try {
+    storage.setItem(CATEGORIES_KEY, JSON.stringify(catalog))
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function addCustomCategory(
+  catalog: CategoryCatalog,
+  name: string,
+  type: TransactionType,
+): CategoryCatalog {
+  const normalizedName = name.trim()
+  const exists = catalog.custom.some(
+    (category) =>
+      category.type === type && category.name.toLowerCase() === normalizedName.toLowerCase(),
+  )
+
+  if (!normalizedName || exists) {
+    return catalog
+  }
+
+  return {
+    ...catalog,
+    custom: [...catalog.custom, { name: normalizedName, type }],
+  }
+}
+
+export function recordCategoryUse(
+  catalog: CategoryCatalog,
+  name: string,
+  type: TransactionType,
+): CategoryCatalog {
+  const key = categoryKey(name, type)
+
+  return {
+    ...catalog,
+    usage: {
+      ...catalog.usage,
+      [key]: (catalog.usage[key] ?? 0) + 1,
+    },
+  }
+}
+
+export function customCategoriesFor(
+  catalog: CategoryCatalog,
+  type: TransactionType,
+): string[] {
+  return catalog.custom
+    .filter((category) => category.type === type)
+    .map((category) => category.name)
+}
+
+export function categoryUsageFor(
+  catalog: CategoryCatalog,
+  type: TransactionType,
+): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(catalog.usage)
+      .filter(([key]) => key.startsWith(`${type}:`))
+      .map(([key, count]) => [key.slice(type.length + 1), count]),
+  )
+}
+
+export function sanitizeCategoryCatalog(value: unknown): CategoryCatalog {
+  if (!isRecord(value)) {
+    return emptyCatalog()
+  }
+
+  const custom = Array.isArray(value.custom)
+    ? value.custom.filter(isCustomCategory).filter(
+        (category, index, categories) =>
+          categories.findIndex(
+            (item) =>
+              item.type === category.type &&
+              item.name.toLowerCase() === category.name.toLowerCase(),
+          ) === index,
+      )
+    : []
+  const usage: Record<string, number> = {}
+
+  if (isRecord(value.usage)) {
+    for (const [key, count] of Object.entries(value.usage)) {
+      if (
+        /^(income|expense):.+/.test(key) &&
+        typeof count === 'number' &&
+        Number.isInteger(count) &&
+        count >= 0
+      ) {
+        usage[key] = count
+      }
+    }
+  }
+
+  return { custom, usage }
+}
+
+function categoryKey(name: string, type: TransactionType): string {
+  return `${type}:${name.trim().toLowerCase()}`
+}
+
+function emptyCatalog(): CategoryCatalog {
+  return { custom: [], usage: {} }
+}
+
+function isCustomCategory(value: unknown): value is CustomCategory {
+  return (
+    isRecord(value) &&
+    typeof value.name === 'string' &&
+    value.name.trim().length > 0 &&
+    value.name.length <= 60 &&
+    (value.type === 'income' || value.type === 'expense')
+  )
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}

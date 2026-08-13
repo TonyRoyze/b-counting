@@ -174,3 +174,40 @@ test('does not accept arbitrary text before Add new category is selected', () =>
   assert.match(response.lines.join(' '), /listed category/)
   assert.equal(response.options.at(-1), 'Add new category…')
 })
+
+test('orders categories by most used while keeping action items last', () => {
+  const flow = new NewTransactionFlow(
+    'LKR',
+    { expense: ['Subscriptions'] },
+    { expense: { transport: 2, subscriptions: 5, food: 1 } },
+  )
+  flow.start()
+  flow.submit('Expense')
+  flow.submit('20')
+
+  const categories = flow.submit('Bus')
+  assert.deepEqual(categories.options.slice(0, 3), [
+    'Subscriptions',
+    'Transport',
+    'Food',
+  ])
+  assert.deepEqual(categories.options.slice(-2), [
+    'Uncategorized',
+    'Add new category…',
+  ])
+})
+
+test('reports newly created category details for immediate persistence', () => {
+  const flow = new NewTransactionFlow()
+  flow.start()
+  flow.submit('Expense')
+  flow.submit('20')
+  flow.submit('Hosting')
+  flow.submit('Add new category…')
+
+  const response = flow.submit('Subscriptions')
+  assert.deepEqual(response.createdCategory, {
+    name: 'Subscriptions',
+    type: 'expense',
+  })
+})
