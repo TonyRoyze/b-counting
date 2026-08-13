@@ -25,16 +25,91 @@
           <span class="terminal-location">~</span>
         </header>
 
-        <div class="terminal-body">
-          <div class="terminal-output" id="terminal-output" role="log" aria-label="Command history"></div>
+        <section class="settings-page" id="settings-page" aria-labelledby="settings-title" hidden>
+          <div class="settings-heading">
+            <div>
+              <p class="settings-path">~/settings</p>
+              <h2 id="settings-title">Settings</h2>
+              <p>Preferences are saved on this device.</p>
+            </div>
+            <button class="settings-close" id="settings-close" type="button">
+              Close <span aria-hidden="true">Esc</span>
+            </button>
+          </div>
+
+          <form class="settings-form" id="settings-form">
+            <div class="setting-row">
+              <div>
+                <label for="read-aloud">Read results aloud</label>
+                <p id="read-aloud-help">Uses the system voice. Leave off when using a screen reader to prevent duplicate speech.</p>
+                <span class="visually-hidden" id="speech-unavailable">Direct speech is not available in this environment.</span>
+              </div>
+              <label class="switch">
+                <input id="read-aloud" name="readAloud" type="checkbox" aria-describedby="read-aloud-help" />
+                <span aria-hidden="true"></span>
+                <span class="visually-hidden">Read results aloud</span>
+              </label>
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <label for="verbosity">Spoken detail</label>
+                <p>Choose how much information is spoken after each action.</p>
+              </div>
+              <select id="verbosity" name="verbosity">
+                <option value="brief">Brief</option>
+                <option value="standard">Standard</option>
+                <option value="detailed">Detailed</option>
+              </select>
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <label for="speech-rate">Speech rate</label>
+                <p><output id="speech-rate-value" for="speech-rate">1×</output> normal speed</p>
+              </div>
+              <input id="speech-rate" name="speechRate" type="range" min="0.5" max="2" step="0.1" value="1" />
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <label for="currency">Currency</label>
+                <p>Used when reading and recording transaction amounts.</p>
+              </div>
+              <select id="currency" name="currency">
+                <option value="LKR">LKR — Sri Lankan rupee</option>
+                <option value="USD">USD — US dollar</option>
+                <option value="EUR">EUR — Euro</option>
+                <option value="GBP">GBP — British pound</option>
+              </select>
+            </div>
+
+            <div class="setting-row">
+              <div>
+                <label for="appearance">Appearance</label>
+                <p>Increase contrast while keeping the terminal layout.</p>
+              </div>
+              <select id="appearance" name="appearance">
+                <option value="dark">Terminal dark</option>
+                <option value="high-contrast">High contrast</option>
+              </select>
+            </div>
+          </form>
+
+          <p class="settings-status" id="settings-status" role="status" aria-live="polite"></p>
+        </section>
+
+        <div class="terminal-body" id="terminal-body">
+          <div class="terminal-output" id="terminal-output" role="region" aria-label="Command history"></div>
 
           <form class="command-form" id="command-form">
             <label class="visually-hidden" for="command-input">Command</label>
             <p class="visually-hidden" id="command-help">
               B-Counting ready. Type help for available commands and press Enter.
             </p>
+            <p class="active-prompt" id="active-prompt" hidden></p>
             <div class="command-line">
-              <span class="prompt-path" aria-hidden="true">~</span>
+              <span class="prompt-path" id="prompt-path" aria-hidden="true">~</span>
               <span class="prompt-symbol" aria-hidden="true">❯</span>
               <input
                 id="command-input"

@@ -1,4 +1,4 @@
-export type CommandName = 'about' | 'clear' | 'help'
+export type CommandName = 'about' | 'clear' | 'help' | 'new' | 'settings'
 
 export interface CommandDefinition {
   name: CommandName
@@ -13,6 +13,18 @@ export interface ParsedCommand {
 }
 
 export const commands: readonly CommandDefinition[] = [
+  {
+    name: 'new',
+    aliases: ['n', 'add'],
+    description: 'Record a new income or expense.',
+    usage: 'new',
+  },
+  {
+    name: 'settings',
+    aliases: ['set'],
+    description: 'Change speech, currency, and appearance preferences.',
+    usage: 'settings',
+  },
   {
     name: 'help',
     aliases: ['h', '?'],
