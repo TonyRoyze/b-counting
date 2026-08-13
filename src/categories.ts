@@ -155,6 +155,24 @@ export function recordCategoryUse(
   }
 }
 
+export function removeCategoryUse(
+  catalog: CategoryCatalog,
+  name: string,
+  type: TransactionType,
+): CategoryCatalog {
+  const key = categoryKey(name, type)
+  const usage = { ...catalog.usage }
+  const nextCount = (usage[key] ?? 0) - 1
+
+  if (nextCount > 0) {
+    usage[key] = nextCount
+  } else {
+    delete usage[key]
+  }
+
+  return { ...catalog, usage }
+}
+
 export function customCategoriesFor(
   catalog: CategoryCatalog,
   type: TransactionType,

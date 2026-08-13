@@ -9,6 +9,7 @@ import {
   archivedCustomCategoriesFor,
   renameCategory,
   recordCategoryUse,
+  removeCategoryUse,
   restoreCategory,
   saveCategoryCatalog,
 } from '../src/categories.ts'
@@ -41,6 +42,21 @@ test('tracks usage independently by transaction type', () => {
 
   assert.equal(categoryUsageFor(catalog, 'expense').other, 2)
   assert.equal(categoryUsageFor(catalog, 'income').other, 1)
+})
+
+test('reduces category usage when a saved transaction is removed', () => {
+  const catalog = {
+    custom: [],
+    usage: { 'expense:food': 2, 'income:salary': 1 },
+    archived: [],
+  }
+
+  const reduced = removeCategoryUse(catalog, 'Food', 'expense')
+  const cleared = removeCategoryUse(reduced, 'Food', 'expense')
+
+  assert.equal(categoryUsageFor(reduced, 'expense').food, 1)
+  assert.equal(categoryUsageFor(cleared, 'expense').food, undefined)
+  assert.equal(categoryUsageFor(cleared, 'income').salary, 1)
 })
 
 test('does not add duplicate custom categories for the same type', () => {

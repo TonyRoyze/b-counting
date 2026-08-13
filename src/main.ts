@@ -27,6 +27,7 @@ import {
   customCategoriesFor,
   loadCategoryCatalog,
   recordCategoryUse,
+  removeCategoryUse,
   saveCategoryCatalog,
   type CategoryCatalog,
 } from './categories'
@@ -36,6 +37,7 @@ import {
 } from './category-flow'
 import { RecentTransactionsFlow } from './recent-flow'
 import { loadTransactions, saveTransactions } from './transaction-storage'
+import { selectionMessages } from './selection-speech'
 
 if ('__TAURI_INTERNALS__' in window) {
   document.documentElement.dataset.runtime = 'tauri'
@@ -67,6 +69,7 @@ let historyIndex = 0
 let transactionFlow: NewTransactionFlow | null = null
 let categoryFlow: CategoryManagementFlow | null = null
 let recentFlow: RecentTransactionsFlow | null = null
+let editingTransactionId: string | null = null
 let currentFlowResponse: FlowResponse | null = null
 let selectedOptionIndex = 0
 let settings: AppSettings = loadSettings(window.localStorage)
@@ -180,6 +183,9 @@ flowOptions.addEventListener('click', (event) => {
 
   selectedOptionIndex = index
   renderFlowOptions(currentFlowResponse.options)
+  announce(
+    `${currentFlowResponse.options[index]}, ${index + 1} of ${currentFlowResponse.options.length}, selected.`,
+  )
   commandInput.focus()
 })
 
@@ -210,6 +216,12 @@ settingsForm.addEventListener('change', () => {
 })
 
 document.addEventListener('keydown', (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 't') {
+    event.preventDefault()
+    repeatCurrentChoices()
+    return
+  }
+
   if (event.key === 'Escape' && !settingsPage.hidden) {
     event.preventDefault()
     closeSettings()
@@ -259,7 +271,7 @@ function runCommand(input: string): void {
     const response = transactionFlow.start()
     appendEntry(input, response.lines)
     showFlowPrompt(response)
-    announce(`${response.announcement ?? response.lines.join(' ')} ${response.prompt}`)
+    announceFlowResponse(response)
     return
   }
 
@@ -273,7 +285,7 @@ function runCommand(input: string): void {
       announce(response.announcement ?? response.lines.join(' '))
     } else {
       showFlowPrompt(response)
-      announce(`${response.announcement ?? response.lines.join(' ')} ${response.prompt}`)
+      announceFlowResponse(response)
     }
     return
   }
@@ -289,7 +301,7 @@ function runCommand(input: string): void {
     const response = categoryFlow.start()
     appendEntry(input, response.lines)
     showFlowPrompt(response)
-    announce(`${response.lines.join(' ')} ${response.prompt}`)
+    announceFlowResponse(response)
     return
   }
 
@@ -363,12 +375,37 @@ function continueTransactionFlow(input: string): void {
   }
 
   if (response.savedDraft) {
-    const transaction = createTransaction(
-      response.savedDraft,
-      transactions.length + 1,
-      settings.currency,
-    )
-    transactions.push(transaction)
+    const existingIndex = editingTransactionId
+      ? transactions.findIndex((transaction) => transaction.id === editingTransactionId)
+      : -1
+    const existingTransaction = transactions[existingIndex]
+    const transaction = existingTransaction
+      ? {
+          ...existingTransaction,
+          type: response.savedDraft.type ?? existingTransaction.type,
+          amount: response.savedDraft.amount ?? existingTransaction.amount,
+          description: response.savedDraft.description ?? existingTransaction.description,
+          category: response.savedDraft.category || null,
+        }
+      : createTransaction(
+          response.savedDraft,
+          nextTransactionSequence(),
+          settings.currency,
+        )
+
+    if (existingTransaction) {
+      transactions[existingIndex] = transaction
+      if (existingTransaction.category) {
+        categoryCatalog = removeCategoryUse(
+          categoryCatalog,
+          existingTransaction.category,
+          existingTransaction.type,
+        )
+      }
+    } else {
+      transactions.push(transaction)
+    }
+
     if (!saveTransactions(window.localStorage, transactions)) {
       appendSystemLine('Warning: this transaction could not be saved for next time.')
     }
@@ -380,8 +417,7 @@ function continueTransactionFlow(input: string): void {
       )
       persistCategoryCatalog()
     }
-    appendSystemLine(`Transaction ID ${transaction.id}.`)
-    announce(`${response.announcement ?? response.lines.join(' ')} Transaction ID ${transaction.id}. Ready for your next action.`)
+    announce(`${response.announcement ?? response.lines.join(' ')} Ready for your next action.`)
     finishFlow()
     return
   }
@@ -393,7 +429,7 @@ function continueTransactionFlow(input: string): void {
   }
 
   showFlowPrompt(response)
-  announce(`${response.announcement ?? response.lines.join(' ')} ${response.prompt}`.trim())
+  announceFlowResponse(response)
 }
 
 function continueCategoryFlow(input: string): void {
@@ -416,7 +452,7 @@ function continueCategoryFlow(input: string): void {
   }
 
   showFlowPrompt(response)
-  announce(`${response.lines.join(' ')} ${response.prompt}`.trim())
+  announceFlowResponse(response)
 }
 
 function continueRecentFlow(input: string): void {
@@ -427,6 +463,33 @@ function continueRecentFlow(input: string): void {
   const response = recentFlow.submit(submittedInput)
   appendFlowResponse(submittedInput, response)
 
+  if (response.editTransaction) {
+    startTransactionEditor(response.editTransaction)
+    return
+  }
+
+  if (response.removedTransactionId) {
+    const transactionIndex = transactions.findIndex(
+      (transaction) => transaction.id === response.removedTransactionId,
+    )
+    const [removedTransaction] = transactionIndex >= 0
+      ? transactions.splice(transactionIndex, 1)
+      : []
+
+    if (removedTransaction?.category) {
+      categoryCatalog = removeCategoryUse(
+        categoryCatalog,
+        removedTransaction.category,
+        removedTransaction.type,
+      )
+      persistCategoryCatalog()
+    }
+
+    if (!saveTransactions(window.localStorage, transactions)) {
+      appendSystemLine('Warning: this change could not be saved for next time.')
+    }
+  }
+
   if (response.done) {
     finishFlow()
     announce(`${response.announcement ?? response.lines.join(' ')} Ready for your next action.`)
@@ -434,7 +497,7 @@ function continueRecentFlow(input: string): void {
   }
 
   showFlowPrompt(response)
-  announce(`${response.announcement ?? response.lines.join(' ')} ${response.prompt}`.trim())
+  announceFlowResponse(response)
 }
 
 function appendFlowResponse(input: string, response: FlowResponse): void {
@@ -469,7 +532,9 @@ function appendSystemLine(message: string): void {
 function showFlowPrompt(response: FlowResponse): void {
   const prompt = response.prompt ?? ''
   activePrompt.hidden = false
-  activePrompt.textContent = prompt
+  activePrompt.textContent = response.options
+    ? `${prompt}\nPress ⌘/Ctrl+T to hear the choices again.`
+    : prompt
   commandLabel.textContent = prompt
   currentFlowResponse = response
 
@@ -489,11 +554,54 @@ function finishFlow(): void {
   transactionFlow = null
   categoryFlow = null
   recentFlow = null
+  editingTransactionId = null
   activePrompt.hidden = true
   activePrompt.textContent = ''
   commandLabel.textContent = 'What would you like to do?'
   currentFlowResponse = null
   clearFlowOptions()
+}
+
+function startTransactionEditor(transaction: Transaction): void {
+  editingTransactionId = transaction.id
+  recentFlow = null
+  transactionFlow = new NewTransactionFlow(
+    transaction.currency,
+    {
+      income: customCategoriesFor(categoryCatalog, 'income'),
+      expense: customCategoriesFor(categoryCatalog, 'expense'),
+    },
+    {
+      income: categoryUsageFor(categoryCatalog, 'income'),
+      expense: categoryUsageFor(categoryCatalog, 'expense'),
+    },
+    {
+      income: categoryCatalog.archived
+        .filter((key) => key.startsWith('income:'))
+        .map((key) => key.slice('income:'.length)),
+      expense: categoryCatalog.archived
+        .filter((key) => key.startsWith('expense:'))
+        .map((key) => key.slice('expense:'.length)),
+    },
+    {
+      type: transaction.type,
+      amount: transaction.amount,
+      description: transaction.description,
+      category: transaction.category ?? '',
+    },
+    'edit',
+  )
+  const response = transactionFlow.start()
+  appendSystemLine(response.lines.join('\n'))
+  showFlowPrompt(response)
+  announceFlowResponse(response)
+}
+
+function nextTransactionSequence(): number {
+  return transactions.reduce((highest, transaction) => {
+    const sequence = Number(transaction.id.match(/-(\d+)$/)?.[1] ?? 0)
+    return Math.max(highest, sequence)
+  }, 0) + 1
 }
 
 function renderFlowOptions(options: readonly string[]): void {
@@ -556,6 +664,26 @@ function announce(message: string): void {
   updateLiveRegion(message)
 
   speak(message)
+}
+
+function announceFlowResponse(response: FlowResponse): void {
+  const introduction = response.announcement ?? response.lines.join(' ')
+
+  if (response.options?.length) {
+    announceOneByOne(selectionMessages(response, introduction))
+    return
+  }
+
+  announce(`${introduction} ${response.prompt ?? ''}`.trim())
+}
+
+function repeatCurrentChoices(): void {
+  if (!currentFlowResponse?.options?.length || !settingsPage.hidden) {
+    announce('There are no choices to hear again right now.')
+    return
+  }
+
+  announceOneByOne(selectionMessages(currentFlowResponse, undefined, true))
 }
 
 function announceOneByOne(messages: readonly string[]): void {

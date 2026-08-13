@@ -1,11 +1,17 @@
 import { speakableAmount, type FlowResponse, type Transaction } from './transaction-flow.ts'
 
-type RecentStep = 'list' | 'detail'
+type RecentStep = 'list' | 'detail' | 'remove'
+
+export interface RecentFlowResponse extends FlowResponse {
+  editTransaction?: Transaction
+  removedTransactionId?: string
+}
 
 export class RecentTransactionsFlow {
   private readonly transactions: readonly Transaction[]
   private readonly labels: readonly string[]
   private step: RecentStep = 'list'
+  private selectedTransaction: Transaction | null = null
 
   constructor(transactions: readonly Transaction[], limit = 10) {
     this.transactions = [...transactions]
@@ -14,7 +20,7 @@ export class RecentTransactionsFlow {
     this.labels = this.transactions.map(transactionLabel)
   }
 
-  start(): FlowResponse {
+  start(): RecentFlowResponse {
     if (this.transactions.length === 0) {
       return {
         lines: ['There are no saved transactions yet.'],
@@ -31,14 +37,55 @@ export class RecentTransactionsFlow {
     }
   }
 
-  submit(rawInput: string): FlowResponse {
+  submit(rawInput: string): RecentFlowResponse {
     const input = rawInput.trim()
 
     if (input.toLowerCase() === 'cancel' || input.toLowerCase() === 'finish') {
       return this.cancel()
     }
 
+    if (this.step === 'remove') {
+      if (input.toLowerCase() === 'remove') {
+        return {
+          lines: ['Transaction removed.'],
+          announcement: 'Transaction removed.',
+          removedTransactionId: this.selectedTransaction?.id,
+          done: true,
+        }
+      }
+
+      if (input.toLowerCase() === 'keep' || input.toLowerCase() === 'back') {
+        this.step = 'detail'
+        return this.detailResponse()
+      }
+
+      return {
+        lines: ['Choose Remove or Keep.'],
+        prompt: 'Remove this transaction?',
+        options: ['Remove', 'Keep'],
+        error: true,
+      }
+    }
+
     if (this.step === 'detail') {
+      if (input.toLowerCase() === 'edit') {
+        return {
+          lines: ['Editing the selected transaction.'],
+          editTransaction: this.selectedTransaction ?? undefined,
+          done: true,
+        }
+      }
+
+      if (input.toLowerCase() === 'remove') {
+        this.step = 'remove'
+        return {
+          lines: ['This will remove the selected transaction.'],
+          announcement: 'This will remove the selected transaction.',
+          prompt: 'Remove this transaction?',
+          options: ['Remove', 'Keep'],
+        }
+      }
+
       if (input.toLowerCase() === 'back') {
         this.step = 'list'
         return {
@@ -49,9 +96,9 @@ export class RecentTransactionsFlow {
       }
 
       return {
-        lines: ['Choose Back or Finish.'],
+        lines: ['Choose Edit, Remove, Back, or Finish.'],
         prompt: 'What would you like to do?',
-        options: ['Back', 'Finish'],
+        options: ['Edit', 'Remove', 'Back', 'Finish'],
         error: true,
       }
     }
@@ -68,18 +115,27 @@ export class RecentTransactionsFlow {
       }
     }
 
+    this.selectedTransaction = transaction
     this.step = 'detail'
-    const details = transactionDetails(transaction)
+    return this.detailResponse()
+  }
+
+  cancel(): RecentFlowResponse {
+    return { lines: ['Finished reviewing recent transactions.'], done: true }
+  }
+
+  private detailResponse(): RecentFlowResponse {
+    if (!this.selectedTransaction) {
+      return this.cancel()
+    }
+
+    const details = transactionDetails(this.selectedTransaction)
     return {
       lines: details.visible,
       announcement: details.spoken,
       prompt: 'What would you like to do?',
-      options: ['Back', 'Finish'],
+      options: ['Edit', 'Remove', 'Back', 'Finish'],
     }
-  }
-
-  cancel(): FlowResponse {
-    return { lines: ['Finished reviewing recent transactions.'], done: true }
   }
 }
 
@@ -103,9 +159,8 @@ export function transactionDetails(transaction: Transaction): {
       transaction.description,
       `Category: ${category}`,
       `Date: ${date}`,
-      `Reference: ${transaction.id}`,
     ],
-    spoken: `${type} of ${speakableAmount(transaction.amount, transaction.currency)}. ${transaction.description}. Category ${category}. Saved ${date}. Reference ${transaction.id}.`,
+    spoken: `${type} of ${speakableAmount(transaction.amount, transaction.currency)}. ${transaction.description}. Category ${category}. Saved ${date}.`,
   }
 }
 

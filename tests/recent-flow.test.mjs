@@ -38,12 +38,41 @@ test('shows one transaction details and returns to the list', () => {
   const list = flow.start()
   const details = flow.submit(list.options[0])
 
-  assert.deepEqual(details.options, ['Back', 'Finish'])
+  assert.deepEqual(details.options, ['Edit', 'Remove', 'Back', 'Finish'])
   assert.match(details.announcement, /200 rupees and 57 cents/)
   assert.match(details.announcement, /Category Food/)
 
   const back = flow.submit('Back')
   assert.equal(back.options.length, 1)
+})
+
+test('returns the selected transaction for editing', () => {
+  const flow = new RecentTransactionsFlow([newer])
+  const list = flow.start()
+  flow.submit(list.options[0])
+
+  const response = flow.submit('Edit')
+
+  assert.equal(response.done, true)
+  assert.deepEqual(response.editTransaction, newer)
+})
+
+test('requires confirmation before removing a transaction', () => {
+  const flow = new RecentTransactionsFlow([newer])
+  const list = flow.start()
+  flow.submit(list.options[0])
+
+  const confirmation = flow.submit('Remove')
+  assert.deepEqual(confirmation.options, ['Remove', 'Keep'])
+  assert.equal(confirmation.removedTransactionId, undefined)
+
+  const kept = flow.submit('Keep')
+  assert.deepEqual(kept.options, ['Edit', 'Remove', 'Back', 'Finish'])
+
+  flow.submit('Remove')
+  const removed = flow.submit('Remove')
+  assert.equal(removed.done, true)
+  assert.equal(removed.removedTransactionId, newer.id)
 })
 
 test('handles an empty history', () => {

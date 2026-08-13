@@ -58,6 +58,8 @@ const typeOptions = ['Income', 'Expense'] as const
 const reviewOptions = ['Save', 'Edit', 'Cancel'] as const
 const editOptions = ['Type', 'Amount', 'Description', 'Category'] as const
 
+type TransactionFlowMode = 'new' | 'edit'
+
 const prompts: Record<FlowStep, string> = {
   type: 'Choose transaction type. Use Up and Down Arrow, then press Enter:',
   amount: 'Amount:',
@@ -72,6 +74,7 @@ export class NewTransactionFlow {
   private step: FlowStep = 'type'
   private draft: TransactionDraft = {}
   private editing = false
+  private readonly mode: TransactionFlowMode
   private readonly currency: string
   private readonly customCategories: readonly string[] | CategoriesByType
   private readonly categoryUsage: Readonly<Record<string, number>> | CategoryUsageByType
@@ -82,14 +85,26 @@ export class NewTransactionFlow {
     customCategories: readonly string[] | CategoriesByType = [],
     categoryUsage: Readonly<Record<string, number>> | CategoryUsageByType = {},
     archivedCategories: CategoriesByType = {},
+    initialDraft: TransactionDraft = {},
+    mode: TransactionFlowMode = 'new',
   ) {
     this.currency = currency
     this.customCategories = customCategories
     this.categoryUsage = categoryUsage
     this.archivedCategories = archivedCategories
+    this.draft = { ...initialDraft }
+    this.mode = mode
   }
 
   start(): FlowResponse {
+    if (this.mode === 'edit') {
+      this.step = 'review'
+      return this.nextPrompt(
+        ['Review saved transaction:', this.summary()],
+        `Review saved transaction. ${this.spokenSummary()}`,
+      )
+    }
+
     return this.nextPrompt(['Starting a new transaction. Type “cancel” at any time to stop.'])
   }
 
@@ -119,7 +134,10 @@ export class NewTransactionFlow {
   }
 
   cancel(): FlowResponse {
-    return { lines: ['New transaction cancelled.'], done: true }
+    return {
+      lines: [this.mode === 'edit' ? 'Changes cancelled.' : 'New transaction cancelled.'],
+      done: true,
+    }
   }
 
   private acceptType(input: string): FlowResponse {
@@ -222,8 +240,11 @@ export class NewTransactionFlow {
       case 'yes':
       case 'y':
         return {
-          lines: ['Transaction saved in this session.', this.summary()],
-          announcement: `Transaction saved in this session. ${this.spokenSummary()}`,
+          lines: [
+            this.mode === 'edit' ? 'Changes saved.' : 'Transaction saved.',
+            this.summary(),
+          ],
+          announcement: `${this.mode === 'edit' ? 'Changes saved.' : 'Transaction saved.'} ${this.spokenSummary()}`,
           savedDraft: { ...this.draft },
           done: true,
         }

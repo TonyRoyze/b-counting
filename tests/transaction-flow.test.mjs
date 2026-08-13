@@ -144,6 +144,30 @@ test('uses the selected currency in review and saved transactions', async () => 
   assert.equal(transaction.currency, 'USD')
 })
 
+test('starts an existing transaction at selectable review actions', () => {
+  const flow = new NewTransactionFlow(
+    'LKR',
+    [],
+    {},
+    {},
+    {
+      type: 'expense',
+      amount: '200.57',
+      description: 'Groceries',
+      category: 'Food',
+    },
+    'edit',
+  )
+
+  const review = flow.start()
+  assert.match(review.lines.join(' '), /Groceries/)
+  assert.deepEqual(review.options, ['Save', 'Edit', 'Cancel'])
+
+  const saved = flow.submit('Save')
+  assert.equal(saved.done, true)
+  assert.match(saved.lines[0], /Changes saved/)
+})
+
 test('offers type-specific categories and creates a custom category last', () => {
   const flow = new NewTransactionFlow('LKR', ['Subscriptions'])
   flow.start()

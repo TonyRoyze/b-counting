@@ -263,6 +263,7 @@ input[type="range"] {
   color: #c8ccc6;
   font-size: 1rem;
   line-height: 1.5;
+  white-space: pre-line;
 }
 
 .active-prompt[hidden] {
