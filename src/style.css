@@ -64,6 +64,10 @@ input[type="range"] {
   align-items: center;
 }
 
+:root[data-runtime="tauri"] .window-controls {
+  visibility: hidden;
+}
+
 .window-control {
   display: block;
   width: 1.55rem;

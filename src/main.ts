@@ -30,6 +30,10 @@ import {
   type CategoryCatalog,
 } from './categories'
 
+if ('__TAURI_INTERNALS__' in window) {
+  document.documentElement.dataset.runtime = 'tauri'
+}
+
 const form = requireElement<HTMLFormElement>('#command-form')
 const commandInput = requireElement<HTMLInputElement>('#command-input')
 const output = requireElement<HTMLElement>('#terminal-output')
