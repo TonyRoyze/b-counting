@@ -14,7 +14,14 @@ export interface Transaction extends Required<Omit<TransactionDraft, 'category'>
   createdAt: string
 }
 
-type FlowStep = 'type' | 'amount' | 'description' | 'category' | 'review' | 'edit'
+type FlowStep =
+  | 'type'
+  | 'amount'
+  | 'description'
+  | 'category'
+  | 'new-category'
+  | 'review'
+  | 'edit'
 
 export interface FlowResponse {
   lines: string[]
@@ -23,13 +30,30 @@ export interface FlowResponse {
   done?: boolean
   savedDraft?: TransactionDraft
   error?: boolean
+  options?: readonly string[]
 }
+
+export const incomeCategories = ['Salary', 'Other income'] as const
+export const expenseCategories = [
+  'Food',
+  'Housing',
+  'Utilities',
+  'Transport',
+  'Health',
+  'Education',
+  'Entertainment',
+  'Other expense',
+] as const
+
+const uncategorizedOption = 'Uncategorized'
+const addCategoryOption = 'Add new category…'
 
 const prompts: Record<FlowStep, string> = {
   type: 'Transaction type (income or expense):',
   amount: 'Amount:',
   description: 'Description:',
-  category: 'Category (optional — press Enter to skip):',
+  category: 'Choose a category. Use Up and Down Arrow, then press Enter:',
+  'new-category': 'New category name:',
   review: 'Save this transaction? (save, edit, or cancel):',
   edit: 'What would you like to edit? (type, amount, description, or category):',
 }
@@ -39,9 +63,11 @@ export class NewTransactionFlow {
   private draft: TransactionDraft = {}
   private editing = false
   private readonly currency: string
+  private readonly customCategories: readonly string[]
 
-  constructor(currency = 'LKR') {
+  constructor(currency = 'LKR', customCategories: readonly string[] = []) {
     this.currency = currency
+    this.customCategories = customCategories
   }
 
   start(): FlowResponse {
@@ -64,6 +90,8 @@ export class NewTransactionFlow {
         return this.acceptDescription(input)
       case 'category':
         return this.acceptCategory(input)
+      case 'new-category':
+        return this.acceptNewCategory(input)
       case 'review':
         return this.acceptReview(input)
       case 'edit':
@@ -112,14 +140,48 @@ export class NewTransactionFlow {
   }
 
   private acceptCategory(input: string): FlowResponse {
+    const options = this.categoryOptions()
+    const numberedOption = /^\d+$/.test(input) ? options[Number(input) - 1] : undefined
+    const selectedOption = numberedOption ?? options.find(
+      (option) => option.toLowerCase() === input.toLowerCase(),
+    )
+
+    if (!selectedOption) {
+      return this.invalid('Choose a listed category by name or number.')
+    }
+
+    if (selectedOption === addCategoryOption) {
+      this.step = 'new-category'
+      return this.nextPrompt([])
+    }
+
+    this.draft.category = selectedOption === uncategorizedOption ? '' : selectedOption
+    this.editing = false
+    this.step = 'review'
+    return this.nextPrompt(['Review:', this.summary()])
+  }
+
+  private acceptNewCategory(input: string): FlowResponse {
+    if (input.length === 0) {
+      return this.invalid('Category name is required.')
+    }
+
     if (input.length > 60) {
       return this.invalid('Category must be 60 characters or fewer.')
+    }
+
+    const existingCategory = this.categoryOptions().find(
+      (category) => category.toLowerCase() === input.toLowerCase(),
+    )
+
+    if (existingCategory) {
+      return this.invalid('That category already exists. Enter a different name.')
     }
 
     this.draft.category = input
     this.editing = false
     this.step = 'review'
-    return this.nextPrompt(['Review:', this.summary()])
+    return this.nextPrompt(['Category created.', 'Review:', this.summary()])
   }
 
   private acceptReview(input: string): FlowResponse {
@@ -184,11 +246,28 @@ export class NewTransactionFlow {
       amount: 'step 2 of 5',
       description: 'step 3 of 5',
       category: 'step 4 of 5',
+      'new-category': 'step 4 of 5',
       review: 'step 5 of 5',
       edit: 'edit',
     }
 
-    return { lines, prompt: prompts[this.step], step: order[this.step] }
+    return {
+      lines,
+      prompt: prompts[this.step],
+      step: order[this.step],
+      options: this.step === 'category' ? this.categoryOptions() : undefined,
+    }
+  }
+
+  private categoryOptions(): readonly string[] {
+    const defaults = this.draft.type === 'income' ? incomeCategories : expenseCategories
+    const uniqueCustomCategories = this.customCategories.filter(
+      (category, index, categories) =>
+        categories.findIndex((item) => item.toLowerCase() === category.toLowerCase()) === index &&
+        !defaults.some((item) => item.toLowerCase() === category.toLowerCase()),
+    )
+
+    return [...defaults, ...uniqueCustomCategories, uncategorizedOption, addCategoryOption]
   }
 }
 

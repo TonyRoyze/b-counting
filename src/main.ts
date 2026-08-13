@@ -2,6 +2,8 @@ import './style.css'
 import { commands, findCommand, parseCommand, suggestCommand } from './commands'
 import {
   createTransaction,
+  expenseCategories,
+  incomeCategories,
   NewTransactionFlow,
   type FlowResponse,
   type Transaction,
@@ -22,6 +24,7 @@ const announcer = requireElement<HTMLElement>('#announcer')
 const activePrompt = requireElement<HTMLElement>('#active-prompt')
 const promptPath = requireElement<HTMLElement>('#prompt-path')
 const commandLabel = requireElement<HTMLLabelElement>('label[for="command-input"]')
+const flowOptions = requireElement<HTMLUListElement>('#flow-options')
 const terminal = requireElement<HTMLElement>('.terminal')
 const terminalBody = requireElement<HTMLElement>('#terminal-body')
 const settingsPage = requireElement<HTMLElement>('#settings-page')
@@ -37,8 +40,11 @@ const appearanceInput = requireElement<HTMLSelectElement>('#appearance')
 
 const commandHistory: string[] = []
 const transactions: Transaction[] = []
+const customCategories: string[] = []
 let historyIndex = 0
 let transactionFlow: NewTransactionFlow | null = null
+let currentFlowResponse: FlowResponse | null = null
+let selectedOptionIndex = 0
 let settings: AppSettings = loadSettings(window.localStorage)
 
 applySettings()
@@ -79,6 +85,18 @@ commandInput.addEventListener('keydown', (event) => {
   }
 
   if (transactionFlow) {
+    if (
+      currentFlowResponse?.options &&
+      (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+    ) {
+      event.preventDefault()
+      const direction = event.key === 'ArrowUp' ? -1 : 1
+      const optionCount = currentFlowResponse.options.length
+      selectedOptionIndex = (selectedOptionIndex + direction + optionCount) % optionCount
+      renderFlowOptions(currentFlowResponse.options)
+      const selected = currentFlowResponse.options[selectedOptionIndex] ?? ''
+      announce(`${selected}, ${selectedOptionIndex + 1} of ${optionCount}, selected.`)
+    }
     return
   }
 
@@ -109,6 +127,19 @@ terminal.addEventListener('click', (event) => {
     return
   }
 
+  commandInput.focus()
+})
+
+flowOptions.addEventListener('click', (event) => {
+  const option = event.target instanceof Element ? event.target.closest<HTMLElement>('[role="option"]') : null
+  const index = option ? Number(option.dataset.index) : Number.NaN
+
+  if (!currentFlowResponse?.options || !Number.isInteger(index)) {
+    return
+  }
+
+  selectedOptionIndex = index
+  renderFlowOptions(currentFlowResponse.options)
   commandInput.focus()
 })
 
@@ -166,7 +197,7 @@ function runCommand(input: string): void {
   }
 
   if (parsedCommand.name === 'new') {
-    transactionFlow = new NewTransactionFlow(settings.currency)
+    transactionFlow = new NewTransactionFlow(settings.currency, customCategories)
     const response = transactionFlow.start()
     appendEntry(input, response.lines)
     showFlowPrompt(response)
@@ -218,8 +249,10 @@ function continueTransactionFlow(input: string): void {
     return
   }
 
-  const response = transactionFlow.submit(input)
-  appendFlowResponse(input, response)
+  const selectedOption = currentFlowResponse?.options?.[selectedOptionIndex]
+  const submittedInput = input.trim() === '' && selectedOption ? selectedOption : input
+  const response = transactionFlow.submit(submittedInput)
+  appendFlowResponse(submittedInput, response)
 
   if (response.savedDraft) {
     const transaction = createTransaction(
@@ -228,6 +261,7 @@ function continueTransactionFlow(input: string): void {
       settings.currency,
     )
     transactions.push(transaction)
+    rememberCustomCategory(transaction.category)
     appendSystemLine(`Transaction ID ${transaction.id}.`)
     announce(`${response.lines.join(' ')} Transaction ID ${transaction.id}. Command prompt.`)
     finishTransactionFlow()
@@ -280,6 +314,18 @@ function showFlowPrompt(response: FlowResponse): void {
   activePrompt.textContent = prompt
   promptPath.textContent = `new ${step}`
   commandLabel.textContent = prompt
+  currentFlowResponse = response
+
+  if (response.options) {
+    selectedOptionIndex = 0
+    renderFlowOptions(response.options)
+    commandInput.setAttribute('role', 'combobox')
+    commandInput.setAttribute('aria-controls', 'flow-options')
+    commandInput.setAttribute('aria-expanded', 'true')
+    commandInput.setAttribute('aria-autocomplete', 'none')
+  } else {
+    clearFlowOptions()
+  }
 }
 
 function finishTransactionFlow(): void {
@@ -288,6 +334,50 @@ function finishTransactionFlow(): void {
   activePrompt.textContent = ''
   promptPath.textContent = '~'
   commandLabel.textContent = 'Command'
+  currentFlowResponse = null
+  clearFlowOptions()
+}
+
+function renderFlowOptions(options: readonly string[]): void {
+  flowOptions.replaceChildren(
+    ...options.map((option, index) => {
+      const item = document.createElement('li')
+      item.id = `flow-option-${index}`
+      item.dataset.index = String(index)
+      item.className = 'flow-option'
+      item.setAttribute('role', 'option')
+      item.setAttribute('aria-selected', String(index === selectedOptionIndex))
+      item.textContent = `${index + 1}. ${option}`
+      return item
+    }),
+  )
+  flowOptions.hidden = false
+  commandInput.setAttribute('aria-activedescendant', `flow-option-${selectedOptionIndex}`)
+}
+
+function clearFlowOptions(): void {
+  flowOptions.hidden = true
+  flowOptions.replaceChildren()
+  commandInput.removeAttribute('role')
+  commandInput.removeAttribute('aria-controls')
+  commandInput.removeAttribute('aria-expanded')
+  commandInput.removeAttribute('aria-autocomplete')
+  commandInput.removeAttribute('aria-activedescendant')
+}
+
+function rememberCustomCategory(category: string | null): void {
+  if (!category) {
+    return
+  }
+
+  const predefinedCategories = [...incomeCategories, ...expenseCategories]
+  const alreadyExists = [...predefinedCategories, ...customCategories].some(
+    (item) => item.toLowerCase() === category.toLowerCase(),
+  )
+
+  if (!alreadyExists) {
+    customCategories.push(category)
+  }
 }
 
 function appendEntry(

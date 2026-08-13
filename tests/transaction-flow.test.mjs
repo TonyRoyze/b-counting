@@ -16,8 +16,10 @@ test('completes a transaction after explicit review', () => {
   assert.match(flow.start().prompt, /Transaction type/)
   assert.match(flow.submit('expense').prompt, /Amount/)
   assert.equal(flow.submit('1250').error, undefined)
-  assert.match(flow.submit('Internet').prompt, /Category/)
-  assert.match(flow.submit('').lines.join(' '), /Uncategorized/)
+  const categories = flow.submit('Internet')
+  assert.match(categories.prompt, /category/i)
+  assert.equal(categories.options.at(-1), 'Add new category…')
+  assert.match(flow.submit('Uncategorized').lines.join(' '), /Uncategorized/)
 
   const saved = flow.submit('save')
   assert.equal(saved.done, true)
@@ -80,10 +82,42 @@ test('uses the selected currency in review and saved transactions', async () => 
   flow.submit('50')
   flow.submit('Consulting')
 
+  flow.submit('Add new category…')
   const review = flow.submit('Work')
   assert.match(review.lines.join(' '), /50.00 USD/)
 
   const saved = flow.submit('save')
   const transaction = createTransaction(saved.savedDraft, 1, 'USD')
   assert.equal(transaction.currency, 'USD')
+})
+
+test('offers type-specific categories and creates a custom category last', () => {
+  const flow = new NewTransactionFlow('LKR', ['Subscriptions'])
+  flow.start()
+  flow.submit('expense')
+  flow.submit('25')
+
+  const categoryStep = flow.submit('Music')
+  assert.deepEqual(categoryStep.options.slice(0, 3), ['Food', 'Housing', 'Utilities'])
+  assert.equal(categoryStep.options.includes('Subscriptions'), true)
+  assert.deepEqual(categoryStep.options.slice(-2), ['Uncategorized', 'Add new category…'])
+
+  const newCategoryStep = flow.submit(String(categoryStep.options.length))
+  assert.match(newCategoryStep.prompt, /New category name/)
+
+  const review = flow.submit('Digital services')
+  assert.match(review.lines.join(' '), /Digital services/)
+})
+
+test('does not accept arbitrary text before Add new category is selected', () => {
+  const flow = new NewTransactionFlow()
+  flow.start()
+  flow.submit('income')
+  flow.submit('100')
+  flow.submit('Gift')
+
+  const response = flow.submit('Random')
+  assert.equal(response.error, true)
+  assert.match(response.lines.join(' '), /listed category/)
+  assert.equal(response.options.at(-1), 'Add new category…')
 })
