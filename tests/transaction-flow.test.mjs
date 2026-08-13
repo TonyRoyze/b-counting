@@ -25,7 +25,9 @@ test('turns exact decimal amounts into natural spoken currency', () => {
 test('completes a transaction after explicit review', () => {
   const flow = new NewTransactionFlow()
 
-  assert.match(flow.start().prompt, /Transaction type/)
+  const start = flow.start()
+  assert.match(start.prompt, /transaction type/i)
+  assert.deepEqual(start.options, ['Income', 'Expense'])
   assert.match(flow.submit('expense').prompt, /Amount/)
   const amount = flow.submit('1250')
   assert.equal(amount.error, undefined)
@@ -54,7 +56,7 @@ test('keeps the current step after invalid input', () => {
 
   const invalidType = flow.submit('other')
   assert.equal(invalidType.error, true)
-  assert.match(invalidType.prompt, /Transaction type/)
+  assert.match(invalidType.prompt, /transaction type/i)
 
   flow.submit('income')
   const invalidAmount = flow.submit('-20')
@@ -74,8 +76,9 @@ test('edits one field and returns to review', () => {
   flow.submit('10')
   flow.submit('Bus')
   flow.submit('Transport')
-  flow.submit('edit')
-  flow.submit('amount')
+  const editChoice = flow.submit('edit')
+  assert.deepEqual(editChoice.options, ['Type', 'Amount', 'Description', 'Category'])
+  flow.submit('Amount')
 
   const review = flow.submit('12.50')
   assert.match(review.prompt, /Choose an action/)
@@ -94,7 +97,25 @@ test('offers Save, Edit, and Cancel as selectable review actions', () => {
   assert.deepEqual(review.options, ['Save', 'Edit', 'Cancel'])
 
   const edit = flow.submit(review.options[1])
-  assert.match(edit.prompt, /What would you like to edit/)
+  assert.match(edit.prompt, /Choose what to edit/)
+  assert.deepEqual(edit.options, ['Type', 'Amount', 'Description', 'Category'])
+})
+
+test('allows each editable field to be selected from the edit list', () => {
+  const fields = ['Type', 'Amount', 'Description', 'Category']
+
+  for (const field of fields) {
+    const flow = new NewTransactionFlow()
+    flow.start()
+    flow.submit('expense')
+    flow.submit('10')
+    flow.submit('Bus')
+    flow.submit('Transport')
+    flow.submit('Edit')
+
+    const response = flow.submit(field)
+    assert.match(response.lines.join(' '), new RegExp(`Editing ${field}`, 'i'))
+  }
 })
 
 test('cancels without producing a transaction', () => {
