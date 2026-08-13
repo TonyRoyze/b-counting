@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { NewTransactionFlow, normalizeAmount } from '../src/transaction-flow.ts'
+import {
+  NewTransactionFlow,
+  normalizeAmount,
+  speakableAmount,
+} from '../src/transaction-flow.ts'
 
 test('normalizes valid monetary amounts without floating-point arithmetic', () => {
   assert.equal(normalizeAmount('1,250.5'), '1250.50')
@@ -10,18 +14,29 @@ test('normalizes valid monetary amounts without floating-point arithmetic', () =
   assert.equal(normalizeAmount('2.999'), null)
 })
 
+test('turns exact decimal amounts into natural spoken currency', () => {
+  assert.equal(speakableAmount('200.57', 'LKR'), '200 rupees and 57 cents')
+  assert.equal(speakableAmount('1.01', 'LKR'), '1 rupee and 1 cent')
+  assert.equal(speakableAmount('0.50', 'USD'), '50 cents')
+  assert.equal(speakableAmount('2.01', 'GBP'), '2 pounds and 1 penny')
+  assert.equal(speakableAmount('10.00', 'EUR'), '10 euros')
+})
+
 test('completes a transaction after explicit review', () => {
   const flow = new NewTransactionFlow()
 
   assert.match(flow.start().prompt, /Transaction type/)
   assert.match(flow.submit('expense').prompt, /Amount/)
-  assert.equal(flow.submit('1250').error, undefined)
+  const amount = flow.submit('1250')
+  assert.equal(amount.error, undefined)
+  assert.match(amount.announcement, /1,?250 rupees|1250 rupees/)
   const categories = flow.submit('Internet')
   assert.match(categories.prompt, /category/i)
   assert.equal(categories.options.at(-1), 'Add new category…')
   const review = flow.submit('Uncategorized')
   assert.match(review.lines.join(' '), /Uncategorized/)
   assert.deepEqual(review.options, ['Save', 'Edit', 'Cancel'])
+  assert.match(review.announcement, /1250 rupees/)
 
   const saved = flow.submit('Save')
   assert.equal(saved.done, true)

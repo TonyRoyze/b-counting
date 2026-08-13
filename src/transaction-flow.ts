@@ -25,6 +25,7 @@ type FlowStep =
 
 export interface FlowResponse {
   lines: string[]
+  announcement?: string
   prompt?: string
   step?: string
   done?: boolean
@@ -124,7 +125,11 @@ export class NewTransactionFlow {
     }
 
     this.draft.amount = amount
-    return this.advanceAfterValue('description', [`Amount ${amount}.`])
+    return this.advanceAfterValue(
+      'description',
+      [`Amount ${amount} ${this.currency}.`],
+      `Amount ${speakableAmount(amount, this.currency)}.`,
+    )
   }
 
   private acceptDescription(input: string): FlowResponse {
@@ -159,7 +164,10 @@ export class NewTransactionFlow {
     this.draft.category = selectedOption === uncategorizedOption ? '' : selectedOption
     this.editing = false
     this.step = 'review'
-    return this.nextPrompt(['Review:', this.summary()])
+    return this.nextPrompt(
+      ['Review:', this.summary()],
+      `Review. ${this.spokenSummary()}`,
+    )
   }
 
   private acceptNewCategory(input: string): FlowResponse {
@@ -182,7 +190,10 @@ export class NewTransactionFlow {
     this.draft.category = input
     this.editing = false
     this.step = 'review'
-    return this.nextPrompt(['Category created.', 'Review:', this.summary()])
+    return this.nextPrompt(
+      ['Category created.', 'Review:', this.summary()],
+      `Category created. Review. ${this.spokenSummary()}`,
+    )
   }
 
   private acceptReview(input: string): FlowResponse {
@@ -192,6 +203,7 @@ export class NewTransactionFlow {
       case 'y':
         return {
           lines: ['Transaction saved in this session.', this.summary()],
+          announcement: `Transaction saved in this session. ${this.spokenSummary()}`,
           savedDraft: { ...this.draft },
           done: true,
         }
@@ -226,22 +238,35 @@ export class NewTransactionFlow {
     return `${type} · ${this.draft.amount} ${this.currency} · ${this.draft.description} · ${category}`
   }
 
+  private spokenSummary(): string {
+    const type = capitalize(this.draft.type ?? '')
+    const category = this.draft.category || 'Uncategorized'
+    return `${type} of ${speakableAmount(this.draft.amount ?? '0.00', this.currency)}. ${this.draft.description}. Category ${category}.`
+  }
+
   private invalid(message: string): FlowResponse {
     return { ...this.nextPrompt([message]), error: true }
   }
 
-  private advanceAfterValue(nextStep: FlowStep, lines: string[]): FlowResponse {
+  private advanceAfterValue(
+    nextStep: FlowStep,
+    lines: string[],
+    announcement?: string,
+  ): FlowResponse {
     if (this.editing) {
       this.editing = false
       this.step = 'review'
-      return this.nextPrompt([...lines, 'Updated review:', this.summary()])
+      return this.nextPrompt(
+        [...lines, 'Updated review:', this.summary()],
+        `Updated review. ${this.spokenSummary()}`,
+      )
     }
 
     this.step = nextStep
-    return this.nextPrompt(lines)
+    return this.nextPrompt(lines, announcement)
   }
 
-  private nextPrompt(lines: string[]): FlowResponse {
+  private nextPrompt(lines: string[], announcement?: string): FlowResponse {
     const order: Record<FlowStep, string> = {
       type: 'step 1 of 5',
       amount: 'step 2 of 5',
@@ -254,6 +279,7 @@ export class NewTransactionFlow {
 
     return {
       lines,
+      announcement,
       prompt: prompts[this.step],
       step: order[this.step],
       options:
@@ -316,6 +342,37 @@ export function normalizeAmount(input: string): string | null {
   }
 
   return `${normalizedWhole}.${normalizedFraction}`
+}
+
+export function speakableAmount(amount: string, currency: string): string {
+  const [major = '0', minor = '00'] = amount.split('.')
+  const normalizedMinor = minor.padEnd(2, '0').slice(0, 2)
+  const currencyUnits: Record<string, { major: [string, string]; minor: [string, string] }> = {
+    LKR: { major: ['rupee', 'rupees'], minor: ['cent', 'cents'] },
+    USD: { major: ['dollar', 'dollars'], minor: ['cent', 'cents'] },
+    EUR: { major: ['euro', 'euros'], minor: ['cent', 'cents'] },
+    GBP: { major: ['pound', 'pounds'], minor: ['penny', 'pence'] },
+  }
+  const units = currencyUnits[currency]
+
+  if (!units) {
+    return `${amount} ${currency}`
+  }
+
+  const parts: string[] = []
+
+  if (major !== '0') {
+    parts.push(`${major} ${major === '1' ? units.major[0] : units.major[1]}`)
+  }
+
+  if (normalizedMinor !== '00') {
+    const readableMinor = normalizedMinor.replace(/^0/, '')
+    parts.push(
+      `${readableMinor} ${readableMinor === '1' ? units.minor[0] : units.minor[1]}`,
+    )
+  }
+
+  return parts.join(' and ') || `0 ${units.major[1]}`
 }
 
 function capitalize(value: string): string {

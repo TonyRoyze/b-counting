@@ -207,7 +207,7 @@ function runCommand(input: string): void {
     const response = transactionFlow.start()
     appendEntry(input, response.lines)
     showFlowPrompt(response)
-    announce(`${response.lines.join(' ')} ${response.prompt}`)
+    announce(`${response.announcement ?? response.lines.join(' ')} ${response.prompt}`)
     return
   }
 
@@ -277,19 +277,19 @@ function continueTransactionFlow(input: string): void {
     transactions.push(transaction)
     rememberCustomCategory(transaction.category)
     appendSystemLine(`Transaction ID ${transaction.id}.`)
-    announce(`${response.lines.join(' ')} Transaction ID ${transaction.id}. Command prompt.`)
+    announce(`${response.announcement ?? response.lines.join(' ')} Transaction ID ${transaction.id}. Command prompt.`)
     finishTransactionFlow()
     return
   }
 
   if (response.done) {
     finishTransactionFlow()
-    announce(`${response.lines.join(' ')} Command prompt.`)
+    announce(`${response.announcement ?? response.lines.join(' ')} Command prompt.`)
     return
   }
 
   showFlowPrompt(response)
-  announce(`${response.lines.join(' ')} ${response.prompt}`.trim())
+  announce(`${response.announcement ?? response.lines.join(' ')} ${response.prompt}`.trim())
 }
 
 function appendFlowResponse(input: string, response: FlowResponse): void {
