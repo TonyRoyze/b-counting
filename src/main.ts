@@ -4,6 +4,7 @@ import {
   findCommand,
   parseCommand,
   primaryShortcut,
+  spokenCommandHelp,
   suggestCommand,
 } from './commands'
 import {
@@ -29,6 +30,12 @@ import {
   saveCategoryCatalog,
   type CategoryCatalog,
 } from './categories'
+import {
+  CategoryManagementFlow,
+  type CategoryFlowResponse,
+} from './category-flow'
+import { RecentTransactionsFlow } from './recent-flow'
+import { loadTransactions, saveTransactions } from './transaction-storage'
 
 if ('__TAURI_INTERNALS__' in window) {
   document.documentElement.dataset.runtime = 'tauri'
@@ -39,7 +46,6 @@ const commandInput = requireElement<HTMLInputElement>('#command-input')
 const output = requireElement<HTMLElement>('#terminal-output')
 const announcer = requireElement<HTMLElement>('#announcer')
 const activePrompt = requireElement<HTMLElement>('#active-prompt')
-const promptPath = requireElement<HTMLElement>('#prompt-path')
 const commandLabel = requireElement<HTMLLabelElement>('label[for="command-input"]')
 const flowOptions = requireElement<HTMLUListElement>('#flow-options')
 const terminal = requireElement<HTMLElement>('.terminal')
@@ -56,13 +62,17 @@ const currencyInput = requireElement<HTMLSelectElement>('#currency')
 const appearanceInput = requireElement<HTMLSelectElement>('#appearance')
 
 const commandHistory: string[] = []
-const transactions: Transaction[] = []
+const transactions: Transaction[] = loadTransactions(window.localStorage)
 let historyIndex = 0
 let transactionFlow: NewTransactionFlow | null = null
+let categoryFlow: CategoryManagementFlow | null = null
+let recentFlow: RecentTransactionsFlow | null = null
 let currentFlowResponse: FlowResponse | null = null
 let selectedOptionIndex = 0
 let settings: AppSettings = loadSettings(window.localStorage)
 let categoryCatalog: CategoryCatalog = loadCategoryCatalog(window.localStorage)
+let announcementSequence = 0
+let announcementTimers: number[] = []
 
 applySettings()
 
@@ -72,8 +82,8 @@ form.addEventListener('submit', (event) => {
   const rawInput = commandInput.value
   const input = rawInput.trim()
 
-  if (input === '' && !transactionFlow) {
-    announce('Enter a command. Type help for available commands.')
+  if (input === '' && !transactionFlow && !categoryFlow && !recentFlow) {
+    announce('Type what you would like to do. Type help to hear your choices.')
     commandInput.focus()
     return
   }
@@ -86,6 +96,18 @@ form.addEventListener('submit', (event) => {
     return
   }
 
+  if (categoryFlow) {
+    continueCategoryFlow(rawInput)
+    commandInput.focus()
+    return
+  }
+
+  if (recentFlow) {
+    continueRecentFlow(rawInput)
+    commandInput.focus()
+    return
+  }
+
   commandHistory.push(input)
   historyIndex = commandHistory.length
   runCommand(input)
@@ -93,15 +115,16 @@ form.addEventListener('submit', (event) => {
 })
 
 commandInput.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && transactionFlow) {
+  if (event.key === 'Escape' && (transactionFlow || categoryFlow || recentFlow)) {
     event.preventDefault()
-    appendFlowResponse('cancel', transactionFlow.cancel())
-    finishTransactionFlow()
-    announce('New transaction cancelled. Command prompt.')
+    const response = transactionFlow?.cancel() ?? categoryFlow?.cancel() ?? recentFlow?.cancel()
+    if (response) appendFlowResponse('cancel', response)
+    finishFlow()
+    announce('Cancelled. Ready for your next action.')
     return
   }
 
-  if (transactionFlow) {
+  if (transactionFlow || categoryFlow || recentFlow) {
     if (
       currentFlowResponse?.options &&
       (event.key === 'ArrowUp' || event.key === 'ArrowDown')
@@ -199,8 +222,8 @@ function runCommand(input: string): void {
   if (!parsedCommand) {
     const suggestion = suggestCommand(input)
     const message = suggestion
-      ? `Command not found. Did you mean “${suggestion}”?`
-      : 'Command not found. Type “help” for available commands.'
+      ? `I did not recognize that. Did you mean “${suggestion}”?`
+      : 'I did not recognize that. Type “help” to hear your choices.'
 
     appendEntry(input, [message], 'error')
     announce(message)
@@ -209,7 +232,7 @@ function runCommand(input: string): void {
 
   if (parsedCommand.name === 'clear') {
     output.replaceChildren()
-    announce('Terminal cleared. Command prompt.')
+    announce('Previous activity cleared. Ready for your next action.')
     return
   }
 
@@ -224,11 +247,34 @@ function runCommand(input: string): void {
         income: categoryUsageFor(categoryCatalog, 'income'),
         expense: categoryUsageFor(categoryCatalog, 'expense'),
       },
+      {
+        income: categoryCatalog.archived
+          .filter((key) => key.startsWith('income:'))
+          .map((key) => key.slice('income:'.length)),
+        expense: categoryCatalog.archived
+          .filter((key) => key.startsWith('expense:'))
+          .map((key) => key.slice('expense:'.length)),
+      },
     )
     const response = transactionFlow.start()
     appendEntry(input, response.lines)
     showFlowPrompt(response)
     announce(`${response.announcement ?? response.lines.join(' ')} ${response.prompt}`)
+    return
+  }
+
+  if (parsedCommand.name === 'recent') {
+    recentFlow = new RecentTransactionsFlow(transactions)
+    const response = recentFlow.start()
+    appendEntry(input, response.lines)
+
+    if (response.done) {
+      recentFlow = null
+      announce(response.announcement ?? response.lines.join(' '))
+    } else {
+      showFlowPrompt(response)
+      announce(`${response.announcement ?? response.lines.join(' ')} ${response.prompt}`)
+    }
     return
   }
 
@@ -238,10 +284,19 @@ function runCommand(input: string): void {
     return
   }
 
+  if (parsedCommand.name === 'categories') {
+    categoryFlow = new CategoryManagementFlow(categoryCatalog)
+    const response = categoryFlow.start()
+    appendEntry(input, response.lines)
+    showFlowPrompt(response)
+    announce(`${response.lines.join(' ')} ${response.prompt}`)
+    return
+  }
+
   if (parsedCommand.name === 'about') {
     const lines = [
       'B-Counting 0.1.0',
-      'Accessible, command-driven accounting. Your data stays on this device.',
+      'Accessible, keyboard-driven accounting. Your data stays on this device.',
     ]
     appendEntry(input, lines)
     announce(lines.join(' '))
@@ -252,7 +307,7 @@ function runCommand(input: string): void {
   const definition = requestedCommand ? findCommand(requestedCommand) : undefined
 
   if (requestedCommand && !definition) {
-    const message = `No help found for “${requestedCommand}”. Type “help” to list commands.`
+    const message = `I could not find help for “${requestedCommand}”. Type “help” to hear your choices.`
     appendEntry(input, [message], 'error')
     announce(message)
     return
@@ -261,22 +316,31 @@ function runCommand(input: string): void {
   const lines = definition
     ? [
         definition.description,
-        `Usage: ${definition.usage}`,
-        `Shortcut: ${primaryShortcut(definition)}`,
+        `Use it like this: ${definition.usage}`,
+        `Type: ${primaryShortcut(definition)}`,
       ]
     : [
-        'Available commands:',
+        'Things you can do:',
         ...commands.map(
           (command) =>
             `${primaryShortcut(command).padEnd(2)}  ${command.name.padEnd(8)} ${command.description}`,
         ),
         '',
-        'Type a shortcut and press Enter.',
-        'Use Up and Down Arrow to revisit previous commands.',
+        'Type the short letters and press Enter.',
+        'Use Up and Down Arrow to revisit something you entered earlier.',
       ]
 
   appendEntry(input, lines)
-  announce(definition ? lines.join(' ') : `${commands.length} commands available.`)
+  if (definition) {
+    announce(lines.join(' '))
+  } else {
+    announceOneByOne([
+      'Here are the things you can do.',
+      ...commands.map(spokenCommandHelp),
+      'Type the short letters and press Enter.',
+      'Use Up and Down Arrow to revisit something you entered earlier.',
+    ])
+  }
 }
 
 function continueTransactionFlow(input: string): void {
@@ -305,6 +369,9 @@ function continueTransactionFlow(input: string): void {
       settings.currency,
     )
     transactions.push(transaction)
+    if (!saveTransactions(window.localStorage, transactions)) {
+      appendSystemLine('Warning: this transaction could not be saved for next time.')
+    }
     if (transaction.category) {
       categoryCatalog = recordCategoryUse(
         categoryCatalog,
@@ -314,14 +381,55 @@ function continueTransactionFlow(input: string): void {
       persistCategoryCatalog()
     }
     appendSystemLine(`Transaction ID ${transaction.id}.`)
-    announce(`${response.announcement ?? response.lines.join(' ')} Transaction ID ${transaction.id}. Command prompt.`)
-    finishTransactionFlow()
+    announce(`${response.announcement ?? response.lines.join(' ')} Transaction ID ${transaction.id}. Ready for your next action.`)
+    finishFlow()
     return
   }
 
   if (response.done) {
-    finishTransactionFlow()
-    announce(`${response.announcement ?? response.lines.join(' ')} Command prompt.`)
+    finishFlow()
+    announce(`${response.announcement ?? response.lines.join(' ')} Ready for your next action.`)
+    return
+  }
+
+  showFlowPrompt(response)
+  announce(`${response.announcement ?? response.lines.join(' ')} ${response.prompt}`.trim())
+}
+
+function continueCategoryFlow(input: string): void {
+  if (!categoryFlow) return
+
+  const selectedOption = currentFlowResponse?.options?.[selectedOptionIndex]
+  const submittedInput = input.trim() === '' && selectedOption ? selectedOption : input
+  const response: CategoryFlowResponse = categoryFlow.submit(submittedInput)
+  appendFlowResponse(submittedInput, response)
+
+  if (response.catalog) {
+    categoryCatalog = response.catalog
+    persistCategoryCatalog()
+  }
+
+  if (response.done) {
+    finishFlow()
+    announce(`${response.lines.join(' ')} Ready for your next action.`)
+    return
+  }
+
+  showFlowPrompt(response)
+  announce(`${response.lines.join(' ')} ${response.prompt}`.trim())
+}
+
+function continueRecentFlow(input: string): void {
+  if (!recentFlow) return
+
+  const selectedOption = currentFlowResponse?.options?.[selectedOptionIndex]
+  const submittedInput = input.trim() === '' && selectedOption ? selectedOption : input
+  const response = recentFlow.submit(submittedInput)
+  appendFlowResponse(submittedInput, response)
+
+  if (response.done) {
+    finishFlow()
+    announce(`${response.announcement ?? response.lines.join(' ')} Ready for your next action.`)
     return
   }
 
@@ -360,10 +468,8 @@ function appendSystemLine(message: string): void {
 
 function showFlowPrompt(response: FlowResponse): void {
   const prompt = response.prompt ?? ''
-  const step = response.step ?? ''
   activePrompt.hidden = false
   activePrompt.textContent = prompt
-  promptPath.textContent = `new ${step}`
   commandLabel.textContent = prompt
   currentFlowResponse = response
 
@@ -379,12 +485,13 @@ function showFlowPrompt(response: FlowResponse): void {
   }
 }
 
-function finishTransactionFlow(): void {
+function finishFlow(): void {
   transactionFlow = null
+  categoryFlow = null
+  recentFlow = null
   activePrompt.hidden = true
   activePrompt.textContent = ''
-  promptPath.textContent = '~'
-  commandLabel.textContent = 'Command'
+  commandLabel.textContent = 'What would you like to do?'
   currentFlowResponse = null
   clearFlowOptions()
 }
@@ -432,7 +539,7 @@ function appendEntry(
 
   const command = document.createElement('p')
   command.className = 'terminal-command'
-  command.textContent = `~ ❯ ${input}`
+  command.textContent = `❯ ${input}`
   entry.append(command)
 
   const result = document.createElement('pre')
@@ -445,12 +552,56 @@ function appendEntry(
 }
 
 function announce(message: string): void {
-  announcer.textContent = ''
-  window.setTimeout(() => {
-    announcer.textContent = message
-  }, 20)
+  cancelAnnouncements()
+  updateLiveRegion(message)
 
   speak(message)
+}
+
+function announceOneByOne(messages: readonly string[]): void {
+  cancelAnnouncements()
+  const sequence = announcementSequence
+
+  if (settings.readAloud && 'speechSynthesis' in window) {
+    for (const message of messages) {
+      const utterance = createUtterance(message, false)
+      utterance.addEventListener('start', () => {
+        if (sequence === announcementSequence) {
+          updateLiveRegion(message)
+        }
+      })
+      window.speechSynthesis.speak(utterance)
+    }
+    return
+  }
+
+  let delay = 20
+  for (const message of messages) {
+    const timer = window.setTimeout(() => {
+      if (sequence === announcementSequence) {
+        updateLiveRegion(message)
+      }
+    }, delay)
+    announcementTimers.push(timer)
+    delay += Math.max(1800, message.split(/\s+/).length * 320)
+  }
+}
+
+function updateLiveRegion(message: string): void {
+  announcer.textContent = ''
+  const timer = window.setTimeout(() => {
+    announcer.textContent = message
+  }, 20)
+  announcementTimers.push(timer)
+}
+
+function cancelAnnouncements(): void {
+  announcementSequence += 1
+  for (const timer of announcementTimers) {
+    window.clearTimeout(timer)
+  }
+  announcementTimers = []
+  window.speechSynthesis?.cancel()
 }
 
 function openSettings(): void {
@@ -467,7 +618,7 @@ function closeSettings(): void {
   settingsPage.hidden = true
   terminalBody.hidden = false
   commandInput.focus()
-  announce('Settings closed. Command prompt.')
+  announce('Settings closed. Ready for your next action.')
 }
 
 function syncSettingsForm(): void {
@@ -495,13 +646,19 @@ function speak(message: string): void {
     return
   }
 
-  const spokenMessage = settings.verbosity === 'brief'
+  window.speechSynthesis.speak(createUtterance(message))
+}
+
+function createUtterance(
+  message: string,
+  applyBriefMode = true,
+): SpeechSynthesisUtterance {
+  const spokenMessage = settings.verbosity === 'brief' && applyBriefMode
     ? (message.match(/^.*?[.!?](?:\s|$)/)?.[0] ?? message)
     : message
   const utterance = new SpeechSynthesisUtterance(spokenMessage)
   utterance.rate = settings.speechRate
-  window.speechSynthesis.cancel()
-  window.speechSynthesis.speak(utterance)
+  return utterance
 }
 
 function requireElement<ElementType extends Element>(selector: string): ElementType {

@@ -75,15 +75,18 @@ export class NewTransactionFlow {
   private readonly currency: string
   private readonly customCategories: readonly string[] | CategoriesByType
   private readonly categoryUsage: Readonly<Record<string, number>> | CategoryUsageByType
+  private readonly archivedCategories: CategoriesByType
 
   constructor(
     currency = 'LKR',
     customCategories: readonly string[] | CategoriesByType = [],
     categoryUsage: Readonly<Record<string, number>> | CategoryUsageByType = {},
+    archivedCategories: CategoriesByType = {},
   ) {
     this.currency = currency
     this.customCategories = customCategories
     this.categoryUsage = categoryUsage
+    this.archivedCategories = archivedCategories
   }
 
   start(): FlowResponse {
@@ -327,7 +330,10 @@ export class NewTransactionFlow {
         !defaults.some((item) => item.toLowerCase() === category.toLowerCase()),
     )
 
-    const categories = [...defaults, ...uniqueCustomCategories]
+    const archived = this.archivedCategories[type] ?? []
+    const categories = [...defaults, ...uniqueCustomCategories].filter(
+      (category) => !archived.some((item) => item.toLowerCase() === category.toLowerCase()),
+    )
     const originalPosition = new Map(
       categories.map((category, index) => [category.toLowerCase(), index]),
     )

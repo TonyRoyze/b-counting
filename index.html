@@ -3,32 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#282c34" />
     <meta
       name="description"
-      content="B-Counting, an accessible command-driven accounting application."
+      content="B-Counting, an accessible keyboard-driven accounting application."
     />
     <title>B-Counting</title>
   </head>
   <body>
     <main class="desktop">
       <section class="terminal" aria-labelledby="terminal-title">
-        <h1 class="visually-hidden" id="terminal-title">B-Counting command prompt</h1>
-
-        <header class="terminal-bar" aria-hidden="true">
-          <span class="window-controls">
-            <span class="window-control window-control--close"></span>
-            <span class="window-control window-control--minimize"></span>
-            <span class="window-control window-control--maximize"></span>
-          </span>
-          <span class="folder-icon"></span>
-          <span class="terminal-location">~</span>
-        </header>
+        <h1 class="visually-hidden" id="terminal-title">B-Counting</h1>
 
         <section class="settings-page" id="settings-page" aria-labelledby="settings-title" hidden>
           <div class="settings-heading">
             <div>
-              <p class="settings-path">~/settings</p>
               <h2 id="settings-title">Settings</h2>
               <p>Preferences are saved on this device.</p>
             </div>
@@ -87,10 +76,10 @@
             <div class="setting-row">
               <div>
                 <label for="appearance">Appearance</label>
-                <p>Increase contrast while keeping the terminal layout.</p>
+                <p>Increase contrast while keeping the same layout.</p>
               </div>
               <select id="appearance" name="appearance">
-                <option value="dark">Terminal dark</option>
+                <option value="dark">Dark</option>
                 <option value="high-contrast">High contrast</option>
               </select>
             </div>
@@ -100,17 +89,16 @@
         </section>
 
         <div class="terminal-body" id="terminal-body">
-          <div class="terminal-output" id="terminal-output" role="region" aria-label="Command history"></div>
+          <div class="terminal-output" id="terminal-output" role="region" aria-label="Previous activity"></div>
 
           <form class="command-form" id="command-form">
-            <label class="visually-hidden" for="command-input">Command</label>
+            <label class="visually-hidden" for="command-input">What would you like to do?</label>
             <p class="visually-hidden" id="command-help">
-              B-Counting ready. Type help for available commands and press Enter.
+              B-Counting is ready. Type help to hear what you can do, then press Enter.
             </p>
             <p class="active-prompt" id="active-prompt" hidden></p>
             <ul class="flow-options" id="flow-options" role="listbox" aria-label="Options" hidden></ul>
             <div class="command-line">
-              <span class="prompt-path" id="prompt-path" aria-hidden="true">~</span>
               <span class="prompt-symbol" aria-hidden="true">❯</span>
               <input
                 id="command-input"

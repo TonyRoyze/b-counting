@@ -5,7 +5,11 @@ import {
   categoryUsageFor,
   customCategoriesFor,
   loadCategoryCatalog,
+  archiveCategory,
+  archivedCustomCategoriesFor,
+  renameCategory,
   recordCategoryUse,
+  restoreCategory,
   saveCategoryCatalog,
 } from '../src/categories.ts'
 
@@ -40,9 +44,28 @@ test('tracks usage independently by transaction type', () => {
 })
 
 test('does not add duplicate custom categories for the same type', () => {
-  const empty = { custom: [], usage: {} }
+  const empty = { custom: [], usage: {}, archived: [] }
   const once = addCustomCategory(empty, 'Subscriptions', 'expense')
   const twice = addCustomCategory(once, 'subscriptions', 'expense')
 
   assert.equal(twice.custom.length, 1)
+})
+
+test('renames a category while preserving its usage', () => {
+  let catalog = { custom: [{ name: 'Subs', type: 'expense' }], usage: { 'expense:subs': 4 }, archived: [] }
+  catalog = renameCategory(catalog, 'Subs', 'Subscriptions', 'expense')
+
+  assert.deepEqual(customCategoriesFor(catalog, 'expense'), ['Subscriptions'])
+  assert.equal(categoryUsageFor(catalog, 'expense').subscriptions, 4)
+})
+
+test('archives and restores categories', () => {
+  const catalog = { custom: [{ name: 'Subscriptions', type: 'expense' }], usage: {}, archived: [] }
+  const archived = archiveCategory(catalog, 'Subscriptions', 'expense')
+
+  assert.deepEqual(customCategoriesFor(archived, 'expense'), [])
+  assert.deepEqual(archivedCustomCategoriesFor(archived, 'expense'), ['Subscriptions'])
+
+  const restored = restoreCategory(archived, 'Subscriptions', 'expense')
+  assert.deepEqual(customCategoriesFor(restored, 'expense'), ['Subscriptions'])
 })

@@ -1,4 +1,11 @@
-export type CommandName = 'about' | 'clear' | 'help' | 'new' | 'settings'
+export type CommandName =
+  | 'about'
+  | 'categories'
+  | 'clear'
+  | 'help'
+  | 'new'
+  | 'recent'
+  | 'settings'
 
 export interface CommandDefinition {
   name: CommandName
@@ -20,16 +27,28 @@ export const commands: readonly CommandDefinition[] = [
     usage: 'new',
   },
   {
+    name: 'recent',
+    aliases: ['r', 'history'],
+    description: 'Review your most recently saved transactions.',
+    usage: 'recent',
+  },
+  {
     name: 'settings',
     aliases: ['st', 'set'],
     description: 'Change speech, currency, and appearance preferences.',
     usage: 'settings',
   },
   {
+    name: 'categories',
+    aliases: ['ct', 'cat'],
+    description: 'List, rename, archive, or restore categories.',
+    usage: 'categories',
+  },
+  {
     name: 'help',
     aliases: ['h', '?'],
-    description: 'List commands or explain one command.',
-    usage: 'help [command]',
+    description: 'List available actions or explain one action.',
+    usage: 'help [action]',
   },
   {
     name: 'about',
@@ -40,7 +59,7 @@ export const commands: readonly CommandDefinition[] = [
   {
     name: 'clear',
     aliases: ['c', 'cl', 'cls'],
-    description: 'Clear the terminal history.',
+    description: 'Clear previous activity from the screen.',
     usage: 'clear',
   },
 ]
@@ -68,6 +87,10 @@ export function primaryShortcut(command: CommandDefinition): string {
   return command.aliases.reduce((shortest, alias) =>
     alias.length < shortest.length ? alias : shortest,
   )
+}
+
+export function spokenCommandHelp(command: CommandDefinition): string {
+  return `${command.name}. Type ${primaryShortcut(command)}. ${command.description}`
 }
 
 export function suggestCommand(input: string): CommandName | null {
