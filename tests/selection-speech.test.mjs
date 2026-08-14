@@ -12,8 +12,8 @@ test('reads selectable choices as separate spoken items', () => {
   assert.deepEqual(selectionMessages(response, 'Starting.'), [
     'Starting.',
     'Choose a type:',
-    'Choice 1 of 2. Income.',
-    'Choice 2 of 2. Expense.',
+    'Choice 1 Income.',
+    'Choice 2 Expense.',
     'Use Up and Down Arrow to choose, then press Enter.',
     'To hear these choices again, on a Mac press the key beside the space bar and T. On other computers, press Control and T.',
   ])

@@ -28,7 +28,7 @@ export const commands: readonly CommandDefinition[] = [
   },
   {
     name: 'recent',
-    aliases: ['r', 'history'],
+    aliases: ['r', 'history', 'his'],
     description: 'Review your most recently saved transactions.',
     usage: 'recent',
   },
@@ -58,7 +58,7 @@ export const commands: readonly CommandDefinition[] = [
   },
   {
     name: 'clear',
-    aliases: ['c', 'cl', 'cls'],
+    aliases: ['c', 'cl', 'cls', 'clr'],
     description: 'Clear previous activity from the screen.',
     usage: 'clear',
   },

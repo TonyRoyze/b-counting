@@ -23,7 +23,7 @@ export function selectionMessages(
 
   messages.push(
     ...options.map(
-      (option, index) => `Choice ${index + 1} of ${options.length}. ${option}.`,
+      (option, index) => `Choice ${index + 1} ${option}.`,
     ),
   )
   messages.push('Use Up and Down Arrow to choose, then press Enter.')

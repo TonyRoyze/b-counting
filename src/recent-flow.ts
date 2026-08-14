@@ -24,14 +24,14 @@ export class RecentTransactionsFlow {
     if (this.transactions.length === 0) {
       return {
         lines: ['There are no saved transactions yet.'],
-        announcement: 'There are no saved transactions yet. Ready for your next action.',
+        announcement: 'There are no saved transactions yet.',
         done: true,
       }
     }
 
     return {
       lines: [`Showing ${this.transactions.length} most recent transactions.`],
-      announcement: `${this.transactions.length} recent transactions. The newest is selected.`,
+      announcement: `${this.transactions.length} recent transactions. Choose a transaction to hear its details.`,
       prompt: 'Choose a transaction to hear its details:',
       options: this.labels,
     }
