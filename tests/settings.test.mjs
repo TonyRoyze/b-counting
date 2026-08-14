@@ -17,6 +17,8 @@ test('accepts supported settings', () => {
   assert.deepEqual(
     sanitizeSettings({
       readAloud: true,
+      speechEngine: 'kokoro',
+      kokoroVoice: 'bf_emma',
       verbosity: 'detailed',
       speechRate: 1.4,
       currency: 'USD',
@@ -24,6 +26,8 @@ test('accepts supported settings', () => {
     }),
     {
       readAloud: true,
+      speechEngine: 'kokoro',
+      kokoroVoice: 'bf_emma',
       verbosity: 'detailed',
       speechRate: 1.4,
       currency: 'USD',

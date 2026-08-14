@@ -19,6 +19,8 @@ import {
   type AppSettings,
   type Appearance,
   type Currency,
+  type KokoroVoice,
+  type SpeechEngine,
   type Verbosity,
 } from './settings'
 import {
@@ -38,6 +40,7 @@ import {
 import { RecentTransactionsFlow } from './recent-flow'
 import { loadTransactions, saveTransactions } from './transaction-storage'
 import { selectionMessages } from './selection-speech'
+import { KokoroSpeechEngine, type KokoroStatus } from './kokoro-speech'
 
 if ('__TAURI_INTERNALS__' in window) {
   document.documentElement.dataset.runtime = 'tauri'
@@ -57,6 +60,10 @@ const settingsForm = requireElement<HTMLFormElement>('#settings-form')
 const settingsClose = requireElement<HTMLButtonElement>('#settings-close')
 const settingsStatus = requireElement<HTMLElement>('#settings-status')
 const readAloudInput = requireElement<HTMLInputElement>('#read-aloud')
+const speechEngineInput = requireElement<HTMLSelectElement>('#speech-engine')
+const kokoroVoiceInput = requireElement<HTMLSelectElement>('#kokoro-voice')
+const kokoroVoiceRow = requireElement<HTMLElement>('#kokoro-voice-row')
+const voiceStatus = requireElement<HTMLElement>('#voice-status')
 const verbosityInput = requireElement<HTMLSelectElement>('#verbosity')
 const speechRateInput = requireElement<HTMLInputElement>('#speech-rate')
 const speechRateValue = requireElement<HTMLOutputElement>('#speech-rate-value')
@@ -76,8 +83,12 @@ let settings: AppSettings = loadSettings(window.localStorage)
 let categoryCatalog: CategoryCatalog = loadCategoryCatalog(window.localStorage)
 let announcementSequence = 0
 let announcementTimers: number[] = []
+let naturalSpeechQueue: Promise<void> = Promise.resolve()
+let naturalVoiceFailed = false
+const kokoroSpeech = new KokoroSpeechEngine(updateKokoroStatus)
 
 applySettings()
+if (settings.speechEngine === 'kokoro') prepareNaturalVoice()
 
 form.addEventListener('submit', (event) => {
   event.preventDefault()
@@ -197,8 +208,11 @@ settingsForm.addEventListener('input', () => {
 
 settingsForm.addEventListener('change', () => {
   const wasReadAloud = settings.readAloud
+  const previousSpeechEngine = settings.speechEngine
   settings = {
     readAloud: readAloudInput.checked,
+    speechEngine: speechEngineInput.value as SpeechEngine,
+    kokoroVoice: kokoroVoiceInput.value as KokoroVoice,
     verbosity: verbosityInput.value as Verbosity,
     speechRate: Number(speechRateInput.value),
     currency: currencyInput.value as Currency,
@@ -211,7 +225,23 @@ settingsForm.addEventListener('change', () => {
   settingsStatus.textContent = message
 
   if (!wasReadAloud && settings.readAloud) {
-    speak('Read aloud enabled. Settings saved on this device.')
+    if (settings.speechEngine === 'kokoro') {
+      speakWithSystem('Read aloud enabled. The natural voice is getting ready.')
+      prepareNaturalVoice()
+    } else {
+      speak('Read aloud enabled. Settings saved on this device.')
+    }
+  } else if (previousSpeechEngine !== settings.speechEngine) {
+    cancelAnnouncements()
+    if (settings.speechEngine === 'kokoro') {
+      naturalVoiceFailed = false
+      if (settings.readAloud) {
+        speakWithSystem('Natural voice selected. It is getting ready.')
+      }
+      prepareNaturalVoice()
+    } else if (settings.readAloud) {
+      speakWithSystem('System voice selected.')
+    }
   }
 })
 
@@ -690,7 +720,11 @@ function announceOneByOne(messages: readonly string[]): void {
   cancelAnnouncements()
   const sequence = announcementSequence
 
-  if (settings.readAloud && 'speechSynthesis' in window) {
+  if (
+    settings.readAloud &&
+    settings.speechEngine === 'system' &&
+    'speechSynthesis' in window
+  ) {
     for (const message of messages) {
       const utterance = createUtterance(message, false)
       utterance.addEventListener('start', () => {
@@ -701,6 +735,10 @@ function announceOneByOne(messages: readonly string[]): void {
       window.speechSynthesis.speak(utterance)
     }
     return
+  }
+
+  if (settings.readAloud && settings.speechEngine === 'kokoro') {
+    for (const message of messages) speak(message, false)
   }
 
   let delay = 20
@@ -730,6 +768,8 @@ function cancelAnnouncements(): void {
   }
   announcementTimers = []
   window.speechSynthesis?.cancel()
+  kokoroSpeech.cancel()
+  naturalSpeechQueue = Promise.resolve()
 }
 
 function openSettings(): void {
@@ -751,16 +791,22 @@ function closeSettings(): void {
 
 function syncSettingsForm(): void {
   readAloudInput.checked = settings.readAloud
+  speechEngineInput.value = settings.speechEngine
+  kokoroVoiceInput.value = settings.kokoroVoice
+  kokoroVoiceRow.hidden = settings.speechEngine !== 'kokoro'
   verbosityInput.value = settings.verbosity
   speechRateInput.value = String(settings.speechRate)
   speechRateValue.value = `${settings.speechRate.toFixed(1).replace('.0', '')}×`
   currencyInput.value = settings.currency
   appearanceInput.value = settings.appearance
 
-  if (!('speechSynthesis' in window)) {
+  if (!('speechSynthesis' in window) && settings.speechEngine === 'system') {
     readAloudInput.checked = false
     readAloudInput.disabled = true
     readAloudInput.setAttribute('aria-describedby', 'read-aloud-help speech-unavailable')
+  } else {
+    readAloudInput.disabled = false
+    readAloudInput.setAttribute('aria-describedby', 'read-aloud-help')
   }
 }
 
@@ -769,12 +815,37 @@ function applySettings(): void {
   syncSettingsForm()
 }
 
-function speak(message: string): void {
-  if (!settings.readAloud || !('speechSynthesis' in window)) {
+function speak(message: string, applyBriefMode = true): void {
+  if (!settings.readAloud) return
+
+  const spokenMessage = formatSpokenMessage(message, applyBriefMode)
+
+  if (settings.speechEngine === 'kokoro' && !naturalVoiceFailed) {
+    const sequence = announcementSequence
+    naturalSpeechQueue = naturalSpeechQueue.then(async () => {
+      if (sequence !== announcementSequence) return
+
+      if (naturalVoiceFailed) {
+        speakWithSystem(spokenMessage, false)
+        return
+      }
+
+      try {
+        await kokoroSpeech.speak(spokenMessage, settings.kokoroVoice, settings.speechRate)
+      } catch {
+        if (sequence !== announcementSequence) return
+        naturalVoiceFailed = true
+        updateKokoroStatus({
+          state: 'error',
+          message: 'Natural voice could not speak. The system voice will be used instead.',
+        })
+        speakWithSystem(spokenMessage, false)
+      }
+    })
     return
   }
 
-  window.speechSynthesis.speak(createUtterance(message))
+  speakWithSystem(spokenMessage, false)
 }
 
 function createUtterance(
@@ -787,6 +858,31 @@ function createUtterance(
   const utterance = new SpeechSynthesisUtterance(spokenMessage)
   utterance.rate = settings.speechRate
   return utterance
+}
+
+function formatSpokenMessage(message: string, applyBriefMode: boolean): string {
+  return settings.verbosity === 'brief' && applyBriefMode
+    ? (message.match(/^.*?[.!?](?:\s|$)/)?.[0] ?? message)
+    : message
+}
+
+function speakWithSystem(message: string, applyBriefMode = true): void {
+  if (!('speechSynthesis' in window)) return
+  window.speechSynthesis.speak(createUtterance(message, applyBriefMode))
+}
+
+function prepareNaturalVoice(): void {
+  kokoroSpeech.prepare().catch(() => {
+    naturalVoiceFailed = true
+    if (settings.readAloud) {
+      speakWithSystem('Natural voice could not load. The system voice will be used instead.')
+    }
+  })
+}
+
+function updateKokoroStatus(status: KokoroStatus): void {
+  voiceStatus.textContent = status.message
+  voiceStatus.dataset.state = status.state
 }
 
 function requireElement<ElementType extends Element>(selector: string): ElementType {

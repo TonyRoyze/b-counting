@@ -1,9 +1,13 @@
 export type Verbosity = 'brief' | 'standard' | 'detailed'
 export type Currency = 'LKR' | 'USD' | 'EUR' | 'GBP'
 export type Appearance = 'dark' | 'high-contrast'
+export type SpeechEngine = 'system' | 'kokoro'
+export type KokoroVoice = 'af_heart' | 'af_bella' | 'bf_emma' | 'bm_george'
 
 export interface AppSettings {
   readAloud: boolean
+  speechEngine: SpeechEngine
+  kokoroVoice: KokoroVoice
   verbosity: Verbosity
   speechRate: number
   currency: Currency
@@ -14,6 +18,8 @@ export const SETTINGS_KEY = 'b-counting.settings.v1'
 
 export const defaultSettings: AppSettings = {
   readAloud: false,
+  speechEngine: 'system',
+  kokoroVoice: 'af_heart',
   verbosity: 'standard',
   speechRate: 1,
   currency: 'LKR',
@@ -50,6 +56,12 @@ export function sanitizeSettings(value: unknown): AppSettings {
 
   return {
     readAloud: typeof value.readAloud === 'boolean' ? value.readAloud : defaultSettings.readAloud,
+    speechEngine: isOneOf(value.speechEngine, ['system', 'kokoro'])
+      ? value.speechEngine
+      : defaultSettings.speechEngine,
+    kokoroVoice: isOneOf(value.kokoroVoice, ['af_heart', 'af_bella', 'bf_emma', 'bm_george'])
+      ? value.kokoroVoice
+      : defaultSettings.kokoroVoice,
     verbosity: isOneOf(value.verbosity, ['brief', 'standard', 'detailed'])
       ? value.verbosity
       : defaultSettings.verbosity,

@@ -270,6 +270,21 @@ input[type="range"] {
   display: none;
 }
 
+.voice-status {
+  min-height: 1.5rem;
+  margin: -0.5rem 0 0.5rem;
+  color: #aeb7af;
+  line-height: 1.5;
+}
+
+.voice-status[data-state="ready"] {
+  color: #86d7a1;
+}
+
+.voice-status[data-state="error"] {
+  color: #ff9b9b;
+}
+
 .flow-options {
   max-width: 30rem;
   padding: 0;

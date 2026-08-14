@@ -30,7 +30,7 @@
             <div class="setting-row">
               <div>
                 <label for="read-aloud">Read results aloud</label>
-                <p id="read-aloud-help">Uses the system voice. Leave off when using a screen reader to prevent duplicate speech.</p>
+                <p id="read-aloud-help">Uses your selected voice. Leave off when using a screen reader to prevent duplicate speech.</p>
                 <span class="visually-hidden" id="speech-unavailable">Direct speech is not available in this environment.</span>
               </div>
               <label class="switch">
@@ -39,6 +39,32 @@
                 <span class="visually-hidden">Read results aloud</span>
               </label>
             </div>
+
+            <div class="setting-row">
+              <div>
+                <label for="speech-engine">Voice engine</label>
+                <p>System is instant. Natural voice downloads once, then runs on this device.</p>
+              </div>
+              <select id="speech-engine" name="speechEngine">
+                <option value="system">System voice</option>
+                <option value="kokoro">Natural local voice</option>
+              </select>
+            </div>
+
+            <div class="setting-row" id="kokoro-voice-row" hidden>
+              <div>
+                <label for="kokoro-voice">Natural voice</label>
+                <p>Choose the voice used for spoken results and choices.</p>
+              </div>
+              <select id="kokoro-voice" name="kokoroVoice">
+                <option value="af_heart">Heart — American female</option>
+                <option value="af_bella">Bella — American female</option>
+                <option value="bf_emma">Emma — British female</option>
+                <option value="bm_george">George — British male</option>
+              </select>
+            </div>
+
+            <p class="voice-status" id="voice-status" role="status" aria-live="polite"></p>
 
             <div class="setting-row">
               <div>
