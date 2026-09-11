@@ -99,6 +99,21 @@
               </select>
             </div>
 
+            <div class="setting-row setting-row--storage">
+              <div>
+                <label for="ledger-path">Ledger text file</label>
+                <p>Desktop: choose or enter a location. Existing ledgers are imported; new files receive your current transactions.</p>
+              </div>
+              <div class="storage-control">
+                <input id="ledger-path" type="text" autocomplete="off" placeholder="Choose a .txt file" />
+                <div class="storage-actions">
+                  <button id="ledger-browse" type="button">Browse…</button>
+                  <button id="ledger-connect" type="button">Use location</button>
+                  <button id="ledger-download" type="button">Download backup</button>
+                </div>
+              </div>
+            </div>
+
             <div class="setting-row">
               <div>
                 <label for="appearance">Appearance</label>
@@ -139,7 +154,13 @@
             </div>
           </form>
 
-          <div class="visually-hidden" id="announcer" aria-live="polite"></div>
+          <div
+            class="visually-hidden"
+            id="announcer"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          ></div>
         </div>
       </section>
     </main>

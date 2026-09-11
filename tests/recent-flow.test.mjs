@@ -29,6 +29,8 @@ test('shows the newest saved transaction first', () => {
   const response = new RecentTransactionsFlow([older, newer]).start()
 
   assert.equal(response.options.length, 2)
+  assert.equal(response.announceOptions, false)
+  assert.equal(response.spokenOptions.length, 2)
   assert.match(response.options[0], /Groceries/)
   assert.match(response.options[1], /Gift/)
 })
@@ -40,7 +42,8 @@ test('shows one transaction details and returns to the list', () => {
 
   assert.deepEqual(details.options, ['Edit', 'Remove', 'Back', 'Finish'])
   assert.match(details.announcement, /200 rupees and 57 cents/)
-  assert.match(details.announcement, /Category Food/)
+  assert.doesNotMatch(details.announcement, /Category|Account|Notes/)
+  assert.match(details.announcement, /Groceries/)
 
   const back = flow.submit('Back')
   assert.equal(back.options.length, 1)

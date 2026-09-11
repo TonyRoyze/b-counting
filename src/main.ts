@@ -4,7 +4,7 @@ import {
   findCommand,
   parseCommand,
   primaryShortcut,
-  spokenCommandHelp,
+  spokenCommandHelpParagraph,
   suggestCommand,
 } from './commands'
 import {
@@ -41,6 +41,28 @@ import { RecentTransactionsFlow } from './recent-flow'
 import { loadTransactions, saveTransactions } from './transaction-storage'
 import { selectionMessages } from './selection-speech'
 import { KokoroSpeechEngine, type KokoroStatus } from './kokoro-speech'
+import {
+  chooseLedgerPath,
+  downloadLedger,
+  isDesktopRuntime,
+  loadLedgerPath,
+  readLedger,
+  saveLedgerPath,
+  writeLedger,
+} from './file-storage'
+import { financialStatement, spokenFinancialStatement, type FinancialStatement } from './reports'
+import {
+  accountBalances,
+  currentBookValue,
+  loadAccountingRecords,
+  saveAccountingRecords,
+  type AccountingRecords,
+} from './accounting-records'
+import {
+  AccountingRecordFlow,
+  type AccountingFlowKind,
+  type AccountingFlowResponse,
+} from './accounting-flow'
 
 if ('__TAURI_INTERNALS__' in window) {
   document.documentElement.dataset.runtime = 'tauri'
@@ -69,6 +91,10 @@ const speechRateInput = requireElement<HTMLInputElement>('#speech-rate')
 const speechRateValue = requireElement<HTMLOutputElement>('#speech-rate-value')
 const currencyInput = requireElement<HTMLSelectElement>('#currency')
 const appearanceInput = requireElement<HTMLSelectElement>('#appearance')
+const ledgerPathInput = requireElement<HTMLInputElement>('#ledger-path')
+const ledgerBrowse = requireElement<HTMLButtonElement>('#ledger-browse')
+const ledgerConnect = requireElement<HTMLButtonElement>('#ledger-connect')
+const ledgerDownload = requireElement<HTMLButtonElement>('#ledger-download')
 
 const commandHistory: string[] = []
 const transactions: Transaction[] = loadTransactions(window.localStorage)
@@ -76,19 +102,26 @@ let historyIndex = 0
 let transactionFlow: NewTransactionFlow | null = null
 let categoryFlow: CategoryManagementFlow | null = null
 let recentFlow: RecentTransactionsFlow | null = null
+let accountingFlow: AccountingRecordFlow | null = null
 let editingTransactionId: string | null = null
 let currentFlowResponse: FlowResponse | null = null
 let selectedOptionIndex = 0
 let settings: AppSettings = loadSettings(window.localStorage)
 let categoryCatalog: CategoryCatalog = loadCategoryCatalog(window.localStorage)
+let accountingRecords: AccountingRecords = loadAccountingRecords(window.localStorage)
 let announcementSequence = 0
 let announcementTimers: number[] = []
 let naturalSpeechQueue: Promise<void> = Promise.resolve()
 let naturalVoiceFailed = false
+let ledgerPath = loadLedgerPath(window.localStorage)
+let ledgerWriteQueue: Promise<void> = Promise.resolve()
+let zoomLevel = loadZoomLevel()
 const kokoroSpeech = new KokoroSpeechEngine(updateKokoroStatus)
 
+applyZoom()
 applySettings()
 if (settings.speechEngine === 'kokoro') prepareNaturalVoice()
+void initializeLedger()
 
 form.addEventListener('submit', (event) => {
   event.preventDefault()
@@ -96,7 +129,7 @@ form.addEventListener('submit', (event) => {
   const rawInput = commandInput.value
   const input = rawInput.trim()
 
-  if (input === '' && !transactionFlow && !categoryFlow && !recentFlow) {
+  if (input === '' && !transactionFlow && !categoryFlow && !recentFlow && !accountingFlow) {
     announce('Type what you would like to do. Type help to hear your choices.')
     commandInput.focus()
     return
@@ -122,6 +155,12 @@ form.addEventListener('submit', (event) => {
     return
   }
 
+  if (accountingFlow) {
+    continueAccountingFlow(rawInput)
+    commandInput.focus()
+    return
+  }
+
   commandHistory.push(input)
   historyIndex = commandHistory.length
   runCommand(input)
@@ -129,16 +168,16 @@ form.addEventListener('submit', (event) => {
 })
 
 commandInput.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && (transactionFlow || categoryFlow || recentFlow)) {
+  if (event.key === 'Escape' && (transactionFlow || categoryFlow || recentFlow || accountingFlow)) {
     event.preventDefault()
-    const response = transactionFlow?.cancel() ?? categoryFlow?.cancel() ?? recentFlow?.cancel()
+    const response = transactionFlow?.cancel() ?? categoryFlow?.cancel() ?? recentFlow?.cancel() ?? accountingFlow?.cancel()
     if (response) appendFlowResponse('cancel', response)
     finishFlow()
     announce('Cancelled. Ready for your next action.')
     return
   }
 
-  if (transactionFlow || categoryFlow || recentFlow) {
+  if (transactionFlow || categoryFlow || recentFlow || accountingFlow) {
     if (
       currentFlowResponse?.options &&
       (event.key === 'ArrowUp' || event.key === 'ArrowDown')
@@ -148,7 +187,9 @@ commandInput.addEventListener('keydown', (event) => {
       const optionCount = currentFlowResponse.options.length
       selectedOptionIndex = (selectedOptionIndex + direction + optionCount) % optionCount
       renderFlowOptions(currentFlowResponse.options)
-      const selected = currentFlowResponse.options[selectedOptionIndex] ?? ''
+      const selected = currentFlowResponse.spokenOptions?.[selectedOptionIndex]
+        ?? currentFlowResponse.options[selectedOptionIndex]
+        ?? ''
       announce(`${selected}, ${selectedOptionIndex + 1} of ${optionCount}, selected.`)
     }
     return
@@ -194,13 +235,44 @@ flowOptions.addEventListener('click', (event) => {
 
   selectedOptionIndex = index
   renderFlowOptions(currentFlowResponse.options)
-  announce(
-    `${currentFlowResponse.options[index]}, ${index + 1} of ${currentFlowResponse.options.length}, selected.`,
-  )
+  const spokenOption = currentFlowResponse.spokenOptions?.[index]
+    ?? currentFlowResponse.options[index]
+  announce(`${spokenOption}, ${index + 1} of ${currentFlowResponse.options.length}, selected.`)
   commandInput.focus()
 })
 
 settingsClose.addEventListener('click', closeSettings)
+
+ledgerBrowse.addEventListener('click', async () => {
+  if (!isDesktopRuntime()) {
+    downloadLedger(transactions)
+    settingsStatus.textContent = 'Text backup downloaded.'
+    return
+  }
+
+  try {
+    const selectedPath = await chooseLedgerPath()
+    if (selectedPath) {
+      ledgerPathInput.value = selectedPath
+      await connectLedger(selectedPath)
+    }
+  } catch (error) {
+    settingsStatus.textContent = errorMessage(error)
+  }
+})
+
+ledgerConnect.addEventListener('click', async () => {
+  try {
+    await connectLedger(ledgerPathInput.value)
+  } catch (error) {
+    settingsStatus.textContent = errorMessage(error)
+  }
+})
+
+ledgerDownload.addEventListener('click', () => {
+  downloadLedger(transactions)
+  settingsStatus.textContent = 'Text backup downloaded.'
+})
 
 settingsForm.addEventListener('input', () => {
   speechRateValue.value = `${Number(speechRateInput.value).toFixed(1).replace('.0', '')}×`
@@ -246,6 +318,25 @@ settingsForm.addEventListener('change', () => {
 })
 
 document.addEventListener('keydown', (event) => {
+  if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+    if (event.key === '+' || event.key === '=') {
+      event.preventDefault()
+      changeZoom(10)
+      return
+    }
+    if (event.key === '-' || event.key === '_') {
+      event.preventDefault()
+      changeZoom(-10)
+      return
+    }
+    if (event.key === '0') {
+      event.preventDefault()
+      zoomLevel = 100
+      applyZoom(true)
+      return
+    }
+  }
+
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 't') {
     event.preventDefault()
     repeatCurrentChoices()
@@ -297,9 +388,12 @@ function runCommand(input: string): void {
           .filter((key) => key.startsWith('expense:'))
           .map((key) => key.slice('expense:'.length)),
       },
+      {},
+      'new',
+      accountingRecords.accounts.map((account) => account.name),
     )
     const response = transactionFlow.start()
-    appendEntry(input, response.lines)
+    startFlowEntry(input, response)
     showFlowPrompt(response)
     announceFlowResponse(response)
     return
@@ -308,7 +402,7 @@ function runCommand(input: string): void {
   if (parsedCommand.name === 'recent') {
     recentFlow = new RecentTransactionsFlow(transactions)
     const response = recentFlow.start()
-    appendEntry(input, response.lines)
+    startFlowEntry(input, response)
 
     if (response.done) {
       recentFlow = null
@@ -317,6 +411,25 @@ function runCommand(input: string): void {
       showFlowPrompt(response)
       announceFlowResponse(response)
     }
+    return
+  }
+
+  if (parsedCommand.name === 'report') {
+    const statement = financialStatement(transactions)
+    appendFinancialStatement(input, statement)
+    announce(spokenFinancialStatement(statement))
+    return
+  }
+
+  if (parsedCommand.name === 'backup') {
+    if (isDesktopRuntime() && ledgerPath) {
+      void persistTransactions(true)
+      appendEntry(input, [`Saving text ledger to ${ledgerPath}`])
+      return
+    }
+    downloadLedger(transactions)
+    appendEntry(input, ['Text ledger downloaded.'])
+    announce('Text ledger downloaded.')
     return
   }
 
@@ -329,9 +442,32 @@ function runCommand(input: string): void {
   if (parsedCommand.name === 'categories') {
     categoryFlow = new CategoryManagementFlow(categoryCatalog)
     const response = categoryFlow.start()
-    appendEntry(input, response.lines)
+    startFlowEntry(input, response)
     showFlowPrompt(response)
     announceFlowResponse(response)
+    return
+  }
+
+  const accountingKinds: Partial<Record<typeof parsedCommand.name, AccountingFlowKind>> = {
+    accounts: 'account', assets: 'asset', deposits: 'deposit', transfer: 'transfer',
+  }
+  const accountingKind = accountingKinds[parsedCommand.name]
+  if (accountingKind) {
+    accountingFlow = new AccountingRecordFlow(accountingKind, accountingRecords, settings.currency)
+    const response = accountingFlow.start()
+    startFlowEntry(input, response)
+    if (response.done) {
+      accountingFlow = null
+      announce(response.announcement ?? response.lines.join(' '))
+    } else {
+      showFlowPrompt(response)
+      announceFlowResponse(response)
+    }
+    return
+  }
+
+  if (parsedCommand.name === 'balance-sheet') {
+    appendBalanceSheet(input)
     return
   }
 
@@ -365,23 +501,20 @@ function runCommand(input: string): void {
         'Things you can do:',
         ...commands.map(
           (command) =>
-            `${primaryShortcut(command).padEnd(2)}  ${command.name.padEnd(8)} ${command.description}`,
+            `${primaryShortcut(command).padEnd(2)}  ${command.name.padEnd(11)} ${command.description}`,
         ),
         '',
         'Type the short letters and press Enter.',
-        'Use Up and Down Arrow to revisit something you entered earlier.',
+        'Use the Up and Down Arrows to revisit something you entered earlier.',
       ]
 
-  appendEntry(input, lines)
   if (definition) {
+    appendEntry(input, lines)
     announce(lines.join(' '))
   } else {
-    announceOneByOne([
-      'Here are the things you can do.',
-      ...commands.map(spokenCommandHelp),
-      'Type the short letters and press Enter.',
-      'Use Up and Down Arrow to revisit something you entered earlier.',
-    ])
+    const helpParagraph = spokenCommandHelpParagraph()
+    appendHelpTable(input)
+    announce(helpParagraph)
   }
 }
 
@@ -416,6 +549,9 @@ function continueTransactionFlow(input: string): void {
           amount: response.savedDraft.amount ?? existingTransaction.amount,
           description: response.savedDraft.description ?? existingTransaction.description,
           category: response.savedDraft.category || null,
+          transactionDate: response.savedDraft.transactionDate ?? existingTransaction.transactionDate,
+          account: response.savedDraft.account ?? existingTransaction.account,
+          notes: response.savedDraft.notes ?? existingTransaction.notes,
         }
       : createTransaction(
           response.savedDraft,
@@ -436,9 +572,7 @@ function continueTransactionFlow(input: string): void {
       transactions.push(transaction)
     }
 
-    if (!saveTransactions(window.localStorage, transactions)) {
-      appendSystemLine('Warning: this transaction could not be saved for next time.')
-    }
+    void persistTransactions()
     if (transaction.category) {
       categoryCatalog = recordCategoryUse(
         categoryCatalog,
@@ -515,9 +649,7 @@ function continueRecentFlow(input: string): void {
       persistCategoryCatalog()
     }
 
-    if (!saveTransactions(window.localStorage, transactions)) {
-      appendSystemLine('Warning: this change could not be saved for next time.')
-    }
+    void persistTransactions()
   }
 
   if (response.done) {
@@ -530,7 +662,33 @@ function continueRecentFlow(input: string): void {
   announceFlowResponse(response)
 }
 
+function continueAccountingFlow(input: string): void {
+  if (!accountingFlow) return
+  const selectedOption = currentFlowResponse?.options?.[selectedOptionIndex]
+  const submittedInput = input.trim() === '' && selectedOption ? selectedOption : input
+  const response: AccountingFlowResponse = accountingFlow.submit(submittedInput)
+  appendFlowResponse(submittedInput, response)
+  if (response.records) {
+    accountingRecords = response.records
+    if (!saveAccountingRecords(window.localStorage, accountingRecords)) {
+      appendSystemLine('Warning: accounting records could not be saved on this device.')
+    }
+  }
+  if (response.done) {
+    finishFlow()
+    announce(`${response.announcement ?? response.lines.join(' ')} Ready for your next action.`)
+    return
+  }
+  showFlowPrompt(response)
+  announceFlowResponse(response)
+}
+
 function appendFlowResponse(input: string, response: FlowResponse): void {
+  // Guided flows expose only the current step. Keeping completed steps in the
+  // accessibility tree makes screen-reader users traverse the whole session
+  // again when they review the page.
+  output.replaceChildren()
+
   const entry = document.createElement('section')
   entry.className = 'terminal-entry terminal-entry--flow'
 
@@ -580,10 +738,16 @@ function showFlowPrompt(response: FlowResponse): void {
   }
 }
 
+function startFlowEntry(input: string, response: FlowResponse): void {
+  output.replaceChildren()
+  appendEntry(input, response.lines)
+}
+
 function finishFlow(): void {
   transactionFlow = null
   categoryFlow = null
   recentFlow = null
+  accountingFlow = null
   editingTransactionId = null
   activePrompt.hidden = true
   activePrompt.textContent = ''
@@ -618,10 +782,15 @@ function startTransactionEditor(transaction: Transaction): void {
       amount: transaction.amount,
       description: transaction.description,
       category: transaction.category ?? '',
+      transactionDate: transaction.transactionDate,
+      account: transaction.account,
+      notes: transaction.notes,
     },
     'edit',
+    accountingRecords.accounts.map((account) => account.name),
   )
   const response = transactionFlow.start()
+  output.replaceChildren()
   appendSystemLine(response.lines.join('\n'))
   showFlowPrompt(response)
   announceFlowResponse(response)
@@ -687,6 +856,114 @@ function appendEntry(
 
   output.append(entry)
   form.scrollIntoView({ block: 'nearest' })
+}
+
+function createEntry(input: string): HTMLElement {
+  const entry = document.createElement('section')
+  entry.className = 'terminal-entry'
+
+  const command = document.createElement('p')
+  command.className = 'terminal-command'
+  command.textContent = `❯ ${input}`
+
+  entry.append(command)
+  output.append(entry)
+  return entry
+}
+
+function appendHelpTable(input: string): void {
+  const entry = createEntry(input)
+  const table = createTable(
+    'Available actions',
+    ['Shortcut', 'Action', 'Description'],
+    commands.map((command) => [
+      primaryShortcut(command).toUpperCase(),
+      command.name,
+      command.description,
+    ]),
+  )
+  entry.append(table)
+  form.scrollIntoView({ block: 'nearest' })
+}
+
+function appendFinancialStatement(input: string, statement: FinancialStatement): void {
+  if (statement.transactionCount === 0) {
+    appendEntry(input, ['No transactions are available to report.'])
+    return
+  }
+
+  const entry = createEntry(input)
+  const heading = document.createElement('h2')
+  heading.className = 'statement-heading'
+  heading.textContent = 'Financial statement'
+  entry.append(heading)
+  entry.append(createTable(
+    'Income, expenses, and net balance',
+    ['Currency', 'Income', 'Expenses', 'Net balance'],
+    statement.totals.map((row) => [row.currency, row.income, row.expenses, row.net]),
+  ))
+  entry.append(createTable(
+    'Transaction activity',
+    ['Date', 'Description', 'Currency', 'Debit', 'Credit', 'Balance'],
+    statement.transactions.map((row) => [
+      row.date,
+      row.description,
+      row.currency,
+      row.debit,
+      row.credit,
+      row.balance,
+    ]),
+  ))
+
+  const note = document.createElement('p')
+  note.className = 'statement-note'
+  note.textContent = `${statement.transactionCount} transaction${statement.transactionCount === 1 ? '' : 's'} included.`
+  entry.append(note)
+  form.scrollIntoView({ block: 'nearest' })
+}
+
+function appendBalanceSheet(input: string): void {
+  const entry = createEntry(input)
+  const heading = document.createElement('h2')
+  heading.className = 'statement-heading'
+  heading.textContent = 'Balance sheet'
+  entry.append(heading)
+
+  const balances = accountBalances(accountingRecords, transactions)
+  entry.append(createTable('Cash and bank accounts', ['Account', 'Type', 'Currency', 'Balance'],
+    accountingRecords.accounts.map((account) => [account.name, account.type, account.currency, balances.get(account.name) ?? '0.00'])))
+  entry.append(createTable('Fixed assets', ['Asset', 'Purchase date', 'Cost', 'Book value', 'Currency'],
+    accountingRecords.assets.map((asset) => [asset.name, asset.purchaseDate, asset.cost, currentBookValue(asset), asset.currency])))
+  entry.append(createTable('Refundable deposits', ['Deposit', 'Date paid', 'Amount', 'Currency', 'Status'],
+    accountingRecords.deposits.map((deposit) => [deposit.name, deposit.paidDate, deposit.amount, deposit.currency, deposit.status])))
+
+  const message = `${accountingRecords.accounts.length} financial accounts, ${accountingRecords.assets.length} fixed assets, and ${accountingRecords.deposits.length} deposits.`
+  announce(`Balance sheet. ${message}`)
+}
+
+function createTable(captionText: string, headings: readonly string[], rows: readonly (readonly string[])[]): HTMLTableElement {
+  const table = document.createElement('table')
+  table.className = 'data-table'
+  const caption = table.createCaption()
+  caption.textContent = captionText
+  const headerRow = table.createTHead().insertRow()
+  for (const heading of headings) {
+    const cell = document.createElement('th')
+    cell.scope = 'col'
+    cell.textContent = heading
+    headerRow.append(cell)
+  }
+  const body = table.createTBody()
+  for (const row of rows) {
+    const tableRow = body.insertRow()
+    row.forEach((value, index) => {
+      const cell = index === 0 ? document.createElement('th') : document.createElement('td')
+      if (cell instanceof HTMLTableCellElement && index === 0) cell.scope = 'row'
+      cell.textContent = value
+      tableRow.append(cell)
+    })
+  }
+  return table
 }
 
 function announce(message: string): void {
@@ -776,7 +1053,6 @@ function openSettings(): void {
   syncSettingsForm()
   terminalBody.hidden = true
   settingsPage.hidden = false
-  settingsStatus.textContent = ''
   settingsClose.focus()
   announce('Settings page. Read results aloud is off by default. Press Escape to close.')
 }
@@ -799,6 +1075,10 @@ function syncSettingsForm(): void {
   speechRateValue.value = `${settings.speechRate.toFixed(1).replace('.0', '')}×`
   currencyInput.value = settings.currency
   appearanceInput.value = settings.appearance
+  ledgerPathInput.value = ledgerPath
+  ledgerPathInput.disabled = !isDesktopRuntime()
+  ledgerBrowse.hidden = !isDesktopRuntime()
+  ledgerConnect.hidden = !isDesktopRuntime()
 
   if (!('speechSynthesis' in window) && settings.speechEngine === 'system') {
     readAloudInput.checked = false
@@ -893,4 +1173,79 @@ function requireElement<ElementType extends Element>(selector: string): ElementT
   }
 
   return element
+}
+
+async function initializeLedger(): Promise<void> {
+  if (!isDesktopRuntime() || !ledgerPath) return
+
+  try {
+    const stored = await readLedger(ledgerPath)
+    if (stored) {
+      transactions.splice(0, transactions.length, ...stored)
+      saveTransactions(window.localStorage, transactions)
+      settingsStatus.textContent = `Loaded ${stored.length} transaction${stored.length === 1 ? '' : 's'} from the connected ledger file.`
+    } else {
+      await writeLedger(ledgerPath, transactions)
+      settingsStatus.textContent = 'The connected ledger file is ready.'
+    }
+  } catch (error) {
+    settingsStatus.textContent = `Ledger warning: ${errorMessage(error)}`
+  }
+}
+
+async function connectLedger(pathValue: string): Promise<void> {
+  const path = pathValue.trim()
+  if (!path) throw new Error('Enter or choose a complete text-file location.')
+
+  const stored = await readLedger(path)
+  if (stored) {
+    transactions.splice(0, transactions.length, ...stored)
+    saveTransactions(window.localStorage, transactions)
+    settingsStatus.textContent = `Connected and imported ${stored.length} transaction${stored.length === 1 ? '' : 's'}.`
+  } else {
+    await writeLedger(path, transactions)
+    settingsStatus.textContent = `Connected and saved ${transactions.length} transaction${transactions.length === 1 ? '' : 's'}.`
+  }
+
+  ledgerPath = path
+  ledgerPathInput.value = path
+  saveLedgerPath(window.localStorage, path)
+  announce(settingsStatus.textContent)
+}
+
+async function persistTransactions(announceResult = false): Promise<void> {
+  if (!saveTransactions(window.localStorage, transactions)) {
+    appendSystemLine('Warning: this change could not be saved on this device.')
+  }
+
+  if (!isDesktopRuntime() || !ledgerPath) return
+  const snapshot = [...transactions]
+  ledgerWriteQueue = ledgerWriteQueue.then(() => writeLedger(ledgerPath, snapshot))
+  try {
+    await ledgerWriteQueue
+    if (announceResult) announce(`Text ledger saved to ${ledgerPath}.`)
+  } catch (error) {
+    settingsStatus.textContent = `Ledger warning: ${errorMessage(error)}`
+    ledgerWriteQueue = Promise.resolve()
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function loadZoomLevel(): number {
+  const stored = Number(window.localStorage.getItem('b-counting-zoom'))
+  return Number.isFinite(stored) && stored >= 75 && stored <= 200 ? stored : 100
+}
+
+function changeZoom(change: number): void {
+  zoomLevel = Math.min(200, Math.max(75, zoomLevel + change))
+  applyZoom(true)
+}
+
+function applyZoom(shouldAnnounce = false): void {
+  document.documentElement.style.fontSize = `${zoomLevel}%`
+  window.localStorage.setItem('b-counting-zoom', String(zoomLevel))
+  if (shouldAnnounce) announce(`Zoom ${zoomLevel} percent.`)
 }

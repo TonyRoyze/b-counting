@@ -5,7 +5,14 @@ export type CommandName =
   | 'help'
   | 'new'
   | 'recent'
+  | 'report'
+  | 'backup'
   | 'settings'
+  | 'accounts'
+  | 'assets'
+  | 'deposits'
+  | 'transfer'
+  | 'balance-sheet'
 
 export interface CommandDefinition {
   name: CommandName
@@ -33,9 +40,21 @@ export const commands: readonly CommandDefinition[] = [
     usage: 'recent',
   },
   {
+    name: 'report',
+    aliases: ['rp', 'summary', 'balance'],
+    description: 'Show a bank-style statement with debit, credit, and running balances.',
+    usage: 'report',
+  },
+  {
+    name: 'backup',
+    aliases: ['b', 'export'],
+    description: 'Save or download a readable text copy of your ledger.',
+    usage: 'backup',
+  },
+  {
     name: 'settings',
     aliases: ['st', 'set'],
-    description: 'Change speech, currency, and appearance preferences.',
+    description: 'Change speech, currency, file storage, and appearance.',
     usage: 'settings',
   },
   {
@@ -43,6 +62,21 @@ export const commands: readonly CommandDefinition[] = [
     aliases: ['ct', 'cat'],
     description: 'List, rename, archive, or restore categories.',
     usage: 'categories',
+  },
+  {
+    name: 'accounts', aliases: ['ac'], description: 'Add a bank or cash account and track its balance.', usage: 'accounts',
+  },
+  {
+    name: 'assets', aliases: ['fa'], description: 'Record a fixed asset and calculate its current book value.', usage: 'assets',
+  },
+  {
+    name: 'deposits', aliases: ['dp'], description: 'Record a refundable deposit as an asset.', usage: 'deposits',
+  },
+  {
+    name: 'transfer', aliases: ['tr'], description: 'Move money between two financial accounts.', usage: 'transfer',
+  },
+  {
+    name: 'balance-sheet', aliases: ['bs'], description: 'Show bank balances, fixed assets, and deposits.', usage: 'balance-sheet',
   },
   {
     name: 'help',
@@ -90,7 +124,19 @@ export function primaryShortcut(command: CommandDefinition): string {
 }
 
 export function spokenCommandHelp(command: CommandDefinition): string {
-  return `${command.name}. Type ${primaryShortcut(command)}. ${command.description}`
+  const action = command.description.replace(/\.$/, '')
+  const naturalAction = `${action.charAt(0).toLowerCase()}${action.slice(1)}`
+  const shortcut = primaryShortcut(command).toUpperCase().split('').join(' ')
+  return `To ${naturalAction}, type ${shortcut}.`
+}
+
+export function spokenCommandHelpParagraph(): string {
+  return [
+    'Here are the things you can do.',
+    ...commands.map(spokenCommandHelp),
+    'After typing a shortcut, press Enter.',
+    'Use the Up and Down Arrow keys to revisit something you entered earlier.',
+  ].join(' ')
 }
 
 export function suggestCommand(input: string): CommandName | null {
