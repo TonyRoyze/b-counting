@@ -5,13 +5,19 @@ export interface TransactionDraft {
   amount?: string
   description?: string
   category?: string
+  transactionDate?: string
+  account?: string
+  notes?: string
 }
 
-export interface Transaction extends Required<Omit<TransactionDraft, 'category'>> {
+export interface Transaction extends Required<Pick<TransactionDraft, 'type' | 'amount' | 'description'>> {
   id: string
   category: string | null
   currency: string
   createdAt: string
+  transactionDate?: string
+  account?: string
+  notes?: string
 }
 
 type FlowStep =
@@ -19,6 +25,9 @@ type FlowStep =
   | 'amount'
   | 'description'
   | 'category'
+  | 'date'
+  | 'account'
+  | 'notes'
   | 'new-category'
   | 'review'
   | 'edit'
@@ -32,6 +41,8 @@ export interface FlowResponse {
   savedDraft?: TransactionDraft
   error?: boolean
   options?: readonly string[]
+  spokenOptions?: readonly string[]
+  announceOptions?: boolean
   createdCategory?: { name: string; type: TransactionType }
 }
 
@@ -56,18 +67,21 @@ const uncategorizedOption = 'Uncategorized'
 const addCategoryOption = 'Add new category…'
 const typeOptions = ['Income', 'Expense'] as const
 const reviewOptions = ['Save', 'Edit', 'Cancel'] as const
-const editOptions = ['Type', 'Amount', 'Description', 'Category'] as const
+const editOptions = ['Type', 'Amount', 'Description', 'Category', 'Date', 'Account', 'Notes'] as const
 
 type TransactionFlowMode = 'new' | 'edit'
 
 const prompts: Record<FlowStep, string> = {
-  type: 'Choose transaction type. Use Up and Down Arrow, then press Enter:',
+  type: 'Choose transaction type. Use the Up and Down Arrows, then press Enter:',
   amount: 'Amount:',
   description: 'Description:',
-  category: 'Choose a category. Use Up and Down Arrow, then press Enter:',
+  category: 'Choose a category. Use the Up and Down Arrows, then press Enter:',
+  date: 'Transaction date (YYYY-MM-DD):',
+  account: 'Account name:',
+  notes: 'Notes (optional):',
   'new-category': 'New category name:',
-  review: 'Choose an action. Use Up and Down Arrow, then press Enter:',
-  edit: 'Choose what to edit. Use Up and Down Arrow, then press Enter:',
+  review: 'Choose an action. Use the Up and Down Arrows, then press Enter:',
+  edit: 'Choose what to edit. Use the Up and Down Arrows, then press Enter:',
 }
 
 export class NewTransactionFlow {
@@ -79,6 +93,7 @@ export class NewTransactionFlow {
   private readonly customCategories: readonly string[] | CategoriesByType
   private readonly categoryUsage: Readonly<Record<string, number>> | CategoryUsageByType
   private readonly archivedCategories: CategoriesByType
+  private readonly accountOptions: readonly string[]
 
   constructor(
     currency = 'LKR',
@@ -87,6 +102,7 @@ export class NewTransactionFlow {
     archivedCategories: CategoriesByType = {},
     initialDraft: TransactionDraft = {},
     mode: TransactionFlowMode = 'new',
+    accountOptions: readonly string[] = [],
   ) {
     this.currency = currency
     this.customCategories = customCategories
@@ -94,6 +110,7 @@ export class NewTransactionFlow {
     this.archivedCategories = archivedCategories
     this.draft = { ...initialDraft }
     this.mode = mode
+    this.accountOptions = accountOptions
   }
 
   start(): FlowResponse {
@@ -124,6 +141,12 @@ export class NewTransactionFlow {
         return this.acceptDescription(input)
       case 'category':
         return this.acceptCategory(input)
+      case 'date':
+        return this.acceptDate(input)
+      case 'account':
+        return this.acceptAccount(input)
+      case 'notes':
+        return this.acceptNotes(input)
       case 'new-category':
         return this.acceptNewCategory(input)
       case 'review':
@@ -264,8 +287,8 @@ export class NewTransactionFlow {
   private acceptEdit(input: string): FlowResponse {
     const field = input.toLowerCase()
 
-    if (!['type', 'amount', 'description', 'category'].includes(field)) {
-      return this.invalid('Enter “type”, “amount”, “description”, or “category”.')
+    if (!['type', 'amount', 'description', 'category', 'date', 'account', 'notes'].includes(field)) {
+      return this.invalid('Choose one of the listed fields.')
     }
 
     this.step = field as Exclude<FlowStep, 'review' | 'edit'>
@@ -276,13 +299,19 @@ export class NewTransactionFlow {
   private summary(): string {
     const type = capitalize(this.draft.type ?? '')
     const category = this.draft.category || 'Uncategorized'
-    return `${type} · ${this.draft.amount} ${this.currency} · ${this.draft.description} · ${category}`
+    const date = this.draft.transactionDate ?? today()
+    const account = this.draft.account ?? 'Cash'
+    const notes = this.draft.notes ? ` · ${this.draft.notes}` : ''
+    return `${date} · ${type} · ${this.draft.amount} ${this.currency} · ${this.draft.description} · ${category} · ${account}${notes}`
   }
 
   private spokenSummary(): string {
     const type = capitalize(this.draft.type ?? '')
     const category = this.draft.category || 'Uncategorized'
-    return `${type} of ${speakableAmount(this.draft.amount ?? '0.00', this.currency)}. ${this.draft.description}. Category ${category}.`
+    const date = this.draft.transactionDate ?? today()
+    const account = this.draft.account ?? 'Cash'
+    const notes = this.draft.notes ? ` Notes: ${this.draft.notes}.` : ''
+    return `${type} of ${speakableAmount(this.draft.amount ?? '0.00', this.currency)}. ${this.draft.description}. Category ${category}. Account ${account}. Date ${date}.${notes}`
   }
 
   private invalid(message: string): FlowResponse {
@@ -313,6 +342,9 @@ export class NewTransactionFlow {
       amount: 'step 2 of 5',
       description: 'step 3 of 5',
       category: 'step 4 of 5',
+      date: 'edit',
+      account: 'edit',
+      notes: 'edit',
       'new-category': 'step 4 of 5',
       review: 'step 5 of 5',
       edit: 'edit',
@@ -332,6 +364,8 @@ export class NewTransactionFlow {
             ? reviewOptions
             : this.step === 'edit'
               ? editOptions
+              : this.step === 'account' && this.accountOptions.length
+                ? this.accountOptions
             : undefined,
     }
   }
@@ -371,6 +405,27 @@ export class NewTransactionFlow {
 
     return [...categories, uncategorizedOption, addCategoryOption]
   }
+
+  private acceptDate(input: string): FlowResponse {
+    if (!isValidDate(input)) return this.invalid('Enter a real date as YYYY-MM-DD.')
+    this.draft.transactionDate = input
+    return this.advanceAfterValue('review', [])
+  }
+
+  private acceptAccount(input: string): FlowResponse {
+    if (!input || input.length > 60) return this.invalid('Account must be 1 to 60 characters.')
+    if (this.accountOptions.length && !this.accountOptions.includes(input)) {
+      return this.invalid('Choose a listed account.')
+    }
+    this.draft.account = input
+    return this.advanceAfterValue('review', [])
+  }
+
+  private acceptNotes(input: string): FlowResponse {
+    if (input.length > 240) return this.invalid('Notes must be 240 characters or fewer.')
+    this.draft.notes = input
+    return this.advanceAfterValue('review', [])
+  }
 }
 
 function isUsageByType(
@@ -405,7 +460,20 @@ export function createTransaction(
     currency,
     id: `${date}-${String(sequence).padStart(3, '0')}`,
     createdAt: now.toISOString(),
+    transactionDate: draft.transactionDate ?? today(),
+    account: draft.account?.trim() || 'Cash',
+    notes: draft.notes?.trim() || '',
   }
+}
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function isValidDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value
 }
 
 export function normalizeAmount(input: string): string | null {

@@ -10,6 +10,7 @@ export interface RecentFlowResponse extends FlowResponse {
 export class RecentTransactionsFlow {
   private readonly transactions: readonly Transaction[]
   private readonly labels: readonly string[]
+  private readonly spokenLabels: readonly string[]
   private step: RecentStep = 'list'
   private selectedTransaction: Transaction | null = null
 
@@ -18,6 +19,7 @@ export class RecentTransactionsFlow {
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
       .slice(0, limit)
     this.labels = this.transactions.map(transactionLabel)
+    this.spokenLabels = this.transactions.map(spokenTransactionLabel)
   }
 
   start(): RecentFlowResponse {
@@ -31,9 +33,11 @@ export class RecentTransactionsFlow {
 
     return {
       lines: [`Showing ${this.transactions.length} most recent transactions.`],
-      announcement: `${this.transactions.length} recent transactions. Choose a transaction to hear its details.`,
-      prompt: 'Choose a transaction to hear its details:',
+      announcement: `${this.transactions.length} recent transaction${this.transactions.length === 1 ? '' : 's'}.`,
+      prompt: 'Choose a transaction. Use the Arrow keys, then press Enter:',
       options: this.labels,
+      spokenOptions: this.spokenLabels,
+      announceOptions: false,
     }
   }
 
@@ -90,8 +94,10 @@ export class RecentTransactionsFlow {
         this.step = 'list'
         return {
           lines: [],
-          prompt: 'Choose a transaction to hear its details:',
+          prompt: 'Choose a transaction. Use the Arrow keys, then press Enter:',
           options: this.labels,
+          spokenOptions: this.spokenLabels,
+          announceOptions: false,
         }
       }
 
@@ -111,6 +117,8 @@ export class RecentTransactionsFlow {
         lines: ['Choose one of the listed transactions.'],
         prompt: 'Choose a transaction to hear its details:',
         options: this.labels,
+        spokenOptions: this.spokenLabels,
+        announceOptions: false,
         error: true,
       }
     }
@@ -133,16 +141,21 @@ export class RecentTransactionsFlow {
     return {
       lines: details.visible,
       announcement: details.spoken,
-      prompt: 'What would you like to do?',
+      prompt: 'Choose Edit, Remove, Back, or Finish:',
       options: ['Edit', 'Remove', 'Back', 'Finish'],
+      announceOptions: false,
     }
   }
 }
 
 export function transactionLabel(transaction: Transaction): string {
-  const date = formatDate(transaction.createdAt)
+  const date = formatDate(transaction.transactionDate ?? transaction.createdAt)
   const type = capitalize(transaction.type)
   return `${date} · ${type} · ${transaction.amount} ${transaction.currency} · ${transaction.description}`
+}
+
+export function spokenTransactionLabel(transaction: Transaction): string {
+  return `${capitalize(transaction.type)}, ${speakableAmount(transaction.amount, transaction.currency)}, ${transaction.description}`
 }
 
 export function transactionDetails(transaction: Transaction): {
@@ -150,17 +163,21 @@ export function transactionDetails(transaction: Transaction): {
   spoken: string
 } {
   const type = capitalize(transaction.type)
-  const date = formatDate(transaction.createdAt)
+  const date = formatDate(transaction.transactionDate ?? transaction.createdAt)
   const category = transaction.category ?? 'Uncategorized'
+  const account = transaction.account ?? 'Cash'
+  const notes = transaction.notes?.trim()
 
   return {
     visible: [
       `${type} · ${transaction.amount} ${transaction.currency}`,
       transaction.description,
       `Category: ${category}`,
+      `Account: ${account}`,
       `Date: ${date}`,
+      ...(notes ? [`Notes: ${notes}`] : []),
     ],
-    spoken: `${type} of ${speakableAmount(transaction.amount, transaction.currency)}. ${transaction.description}. Category ${category}. Saved ${date}.`,
+    spoken: `${type}, ${speakableAmount(transaction.amount, transaction.currency)}, for ${transaction.description}, on ${date}.`,
   }
 }
 

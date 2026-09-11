@@ -77,7 +77,7 @@ test('edits one field and returns to review', () => {
   flow.submit('Bus')
   flow.submit('Transport')
   const editChoice = flow.submit('edit')
-  assert.deepEqual(editChoice.options, ['Type', 'Amount', 'Description', 'Category'])
+  assert.deepEqual(editChoice.options, ['Type', 'Amount', 'Description', 'Category', 'Date', 'Account', 'Notes'])
   flow.submit('Amount')
 
   const review = flow.submit('12.50')
@@ -98,11 +98,11 @@ test('offers Save, Edit, and Cancel as selectable review actions', () => {
 
   const edit = flow.submit(review.options[1])
   assert.match(edit.prompt, /Choose what to edit/)
-  assert.deepEqual(edit.options, ['Type', 'Amount', 'Description', 'Category'])
+  assert.deepEqual(edit.options, ['Type', 'Amount', 'Description', 'Category', 'Date', 'Account', 'Notes'])
 })
 
 test('allows each editable field to be selected from the edit list', () => {
-  const fields = ['Type', 'Amount', 'Description', 'Category']
+  const fields = ['Type', 'Amount', 'Description', 'Category', 'Date', 'Account', 'Notes']
 
   for (const field of fields) {
     const flow = new NewTransactionFlow()
@@ -116,6 +116,32 @@ test('allows each editable field to be selected from the edit list', () => {
     const response = flow.submit(field)
     assert.match(response.lines.join(' '), new RegExp(`Editing ${field}`, 'i'))
   }
+})
+
+test('records a transaction date, account, and optional notes from review', () => {
+  const flow = new NewTransactionFlow()
+  flow.start()
+  flow.submit('expense')
+  flow.submit('10')
+  flow.submit('Lunch')
+  flow.submit('Food')
+
+  flow.submit('Edit')
+  flow.submit('Date')
+  assert.equal(flow.submit('not-a-date').error, true)
+  flow.submit('2026-09-01')
+  flow.submit('Edit')
+  flow.submit('Account')
+  flow.submit('Business card')
+  flow.submit('Edit')
+  flow.submit('Notes')
+  const review = flow.submit('Receipt 42')
+  assert.match(review.lines.join(' '), /2026-09-01.*Business card.*Receipt 42/)
+
+  assert.deepEqual(flow.submit('Save').savedDraft, {
+    type: 'expense', amount: '10.00', description: 'Lunch', category: 'Food',
+    transactionDate: '2026-09-01', account: 'Business card', notes: 'Receipt 42',
+  })
 })
 
 test('cancels without producing a transaction', () => {

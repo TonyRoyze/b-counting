@@ -150,6 +150,39 @@ input[type="range"] {
   accent-color: #b1b959;
 }
 
+.storage-control {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.storage-control input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #626975;
+  border-radius: 0.4rem;
+  color: #f1f2ee;
+  background: #20242b;
+}
+
+.storage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.storage-actions button {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #626975;
+  border-radius: 0.4rem;
+  color: #f1f2ee;
+  background: #323741;
+}
+
+.storage-actions button:hover { background: #3c424d; }
+.storage-actions button:focus-visible,
+.storage-control input:focus-visible { outline: 3px solid #dfe778; outline-offset: 3px; }
+
 .switch {
   position: relative;
   justify-self: end;
@@ -247,6 +280,41 @@ input[type="range"] {
   color: #ff8a84;
 }
 
+.statement-heading {
+  margin: 0.75rem 0;
+  font-size: 1.25rem;
+}
+
+.data-table {
+  width: 100%;
+  margin: 0.75rem 0 1.25rem;
+  border-collapse: collapse;
+  color: #c8ccc6;
+}
+
+.data-table caption {
+  padding-bottom: 0.5rem;
+  color: #f1f2ee;
+  font-weight: 700;
+  text-align: left;
+}
+
+.data-table th,
+.data-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(200, 204, 198, 0.2);
+  text-align: left;
+  vertical-align: top;
+}
+
+.data-table thead th {
+  color: #8fb6b2;
+}
+
+.statement-note {
+  color: #aeb7af;
+}
+
 .terminal-system-line {
   margin: -1rem 0 1.5rem;
   color: #86d7a1;
@@ -320,15 +388,22 @@ input[type="range"] {
   grid-template-columns: auto 1fr;
   gap: 0.65rem;
   align-items: center;
-  min-height: 2rem;
-  border-radius: 0.2rem;
+  min-height: 3.25rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid #626975;
+  border-radius: 0.45rem;
+  background: #20242b;
 }
 
 .command-line:focus-within {
+  border-color: #b1b959;
   box-shadow: 0 0 0 2px rgba(177, 185, 89, 0.34);
 }
 
 .prompt-symbol {
+  display: grid;
+  align-self: stretch;
+  place-items: center;
   color: #b1b959;
   font-size: 1.65rem;
   font-weight: 800;
@@ -338,7 +413,7 @@ input[type="range"] {
 .command-line input {
   width: 100%;
   min-width: 0;
-  padding: 0.15rem 0;
+  padding: 0.35rem 0;
   border: 0;
   outline: 0;
   color: #f1f2ee;
