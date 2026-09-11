@@ -1,0 +1,95 @@
+name: Build desktop installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS Apple Silicon
+            platform: macos-latest
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+
+          - name: macOS Intel
+            platform: macos-latest
+            target: x86_64-apple-darwin
+            bundles: app,dmg
+
+          - name: Windows x64
+            platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+
+          - name: Linux x64
+            platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust build files
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build and publish installers
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: B-Counting v__VERSION__
+          releaseBody: |
+            B-Counting desktop installers.
+
+            Choose the DMG for macOS, EXE or MSI for Windows, and AppImage or DEB for Linux.
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
