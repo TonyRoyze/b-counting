@@ -77,6 +77,10 @@ const commandLabel = requireElement<HTMLLabelElement>('label[for="command-input"
 const flowOptions = requireElement<HTMLUListElement>('#flow-options')
 const terminal = requireElement<HTMLElement>('.terminal')
 const terminalBody = requireElement<HTMLElement>('#terminal-body')
+const leftPanel = requireElement<HTMLElement>('#left-panel')
+const rightPanel = requireElement<HTMLElement>('#right-panel')
+const leftPanelOptions = requireElement<HTMLUListElement>('#left-panel-options')
+const rightPanelOptions = requireElement<HTMLUListElement>('#right-panel-options')
 const settingsPage = requireElement<HTMLElement>('#settings-page')
 const settingsForm = requireElement<HTMLFormElement>('#settings-form')
 const settingsClose = requireElement<HTMLButtonElement>('#settings-close')
@@ -116,10 +120,17 @@ let naturalVoiceFailed = false
 let ledgerPath = loadLedgerPath(window.localStorage)
 let ledgerWriteQueue: Promise<void> = Promise.resolve()
 let zoomLevel = loadZoomLevel()
+let activePanel: 'left' | 'right' | null = null
+let panelSelection = 0
+const panelCommands = {
+  left: ['new', 'recent', 'report', 'categories', 'settings'],
+  right: ['accounts', 'assets', 'deposits', 'transfer', 'balance-sheet', 'backup', 'help'],
+} as const
 const kokoroSpeech = new KokoroSpeechEngine(updateKokoroStatus)
 
 applyZoom()
 applySettings()
+renderPanelOptions()
 if (settings.speechEngine === 'kokoro') prepareNaturalVoice()
 void initializeLedger()
 
@@ -131,7 +142,6 @@ form.addEventListener('submit', (event) => {
 
   if (input === '' && !transactionFlow && !categoryFlow && !recentFlow && !accountingFlow) {
     announce('Type what you would like to do. Type help to hear your choices.')
-    commandInput.focus()
     return
   }
 
@@ -139,32 +149,27 @@ form.addEventListener('submit', (event) => {
 
   if (transactionFlow) {
     continueTransactionFlow(rawInput)
-    commandInput.focus()
     return
   }
 
   if (categoryFlow) {
     continueCategoryFlow(rawInput)
-    commandInput.focus()
     return
   }
 
   if (recentFlow) {
     continueRecentFlow(rawInput)
-    commandInput.focus()
     return
   }
 
   if (accountingFlow) {
     continueAccountingFlow(rawInput)
-    commandInput.focus()
     return
   }
 
   commandHistory.push(input)
   historyIndex = commandHistory.length
   runCommand(input)
-  commandInput.focus()
 })
 
 commandInput.addEventListener('keydown', (event) => {
@@ -318,6 +323,39 @@ settingsForm.addEventListener('change', () => {
 })
 
 document.addEventListener('keydown', (event) => {
+  if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+    event.preventDefault()
+    const side = event.key === 'ArrowLeft' ? 'left' : 'right'
+    if (activePanel === side) closeCommandPanel()
+    else openCommandPanel(side)
+    return
+  }
+
+  if (activePanel) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeCommandPanel()
+      return
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const options = panelCommands[activePanel]
+      panelSelection = (panelSelection + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length
+      renderPanelOptions()
+      return
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      const command = panelCommands[activePanel][panelSelection]
+      closeCommandPanel()
+      commandInput.value = ''
+      commandHistory.push(command)
+      historyIndex = commandHistory.length
+      runCommand(command)
+      return
+    }
+  }
+
   if ((event.metaKey || event.ctrlKey) && !event.altKey) {
     if (event.key === '+' || event.key === '=') {
       event.preventDefault()
@@ -348,6 +386,38 @@ document.addEventListener('keydown', (event) => {
     closeSettings()
   }
 })
+
+function renderPanelOptions(): void {
+  for (const [side, list] of [['left', leftPanelOptions], ['right', rightPanelOptions]] as const) {
+    list.replaceChildren(...panelCommands[side].map((name, index) => {
+      const item = document.createElement('li')
+      item.className = 'panel-option'
+      item.dataset.index = String(index)
+      item.setAttribute('role', 'option')
+      item.setAttribute('aria-selected', String(activePanel === side && panelSelection === index))
+      item.textContent = findCommand(name)?.description.replace(/\.$/, '') ?? name
+      return item
+    }))
+  }
+}
+
+function openCommandPanel(side: 'left' | 'right'): void {
+  if (!settingsPage.hidden || transactionFlow || categoryFlow || recentFlow || accountingFlow) return
+  activePanel = side
+  panelSelection = 0
+  leftPanel.hidden = side !== 'left'
+  rightPanel.hidden = side !== 'right'
+  renderPanelOptions()
+  ;(side === 'left' ? leftPanelOptions : rightPanelOptions).focus()
+}
+
+function closeCommandPanel(): void {
+  activePanel = null
+  leftPanel.hidden = true
+  rightPanel.hidden = true
+  renderPanelOptions()
+  commandInput.focus()
+}
 
 function runCommand(input: string): void {
   const parsedCommand = parseCommand(input)
@@ -841,6 +911,7 @@ function appendEntry(
   lines: readonly string[],
   tone: 'normal' | 'error' = 'normal',
 ): void {
+  output.replaceChildren()
   const entry = document.createElement('section')
   entry.className = 'terminal-entry'
 
@@ -859,6 +930,7 @@ function appendEntry(
 }
 
 function createEntry(input: string): HTMLElement {
+  output.replaceChildren()
   const entry = document.createElement('section')
   entry.className = 'terminal-entry'
 

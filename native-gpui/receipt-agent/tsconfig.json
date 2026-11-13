@@ -1,0 +1,9 @@
+{
+  "extends": "agents/tsconfig",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["src/**/*.ts", "worker-configuration.d.ts"]
+}

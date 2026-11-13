@@ -12,8 +12,19 @@
   </head>
   <body>
     <main class="desktop">
-      <section class="terminal" aria-labelledby="terminal-title">
+      <section class="terminal">
         <h1 class="visually-hidden" id="terminal-title">B-Counting</h1>
+
+        <aside class="command-panel command-panel--left" id="left-panel" aria-label="Core tasks" hidden>
+          <h2>Core tasks</h2>
+          <p>Alt + ← to open</p>
+          <ul class="panel-options" id="left-panel-options" role="listbox" aria-label="Core tasks" tabindex="-1"></ul>
+        </aside>
+        <aside class="command-panel command-panel--right" id="right-panel" aria-label="More actions" hidden>
+          <h2>More actions</h2>
+          <p>Alt + → to open</p>
+          <ul class="panel-options" id="right-panel-options" role="listbox" aria-label="More actions" tabindex="-1"></ul>
+        </aside>
 
         <section class="settings-page" id="settings-page" aria-labelledby="settings-title" hidden>
           <div class="settings-heading">
@@ -130,12 +141,12 @@
         </section>
 
         <div class="terminal-body" id="terminal-body">
-          <div class="terminal-output" id="terminal-output" role="region" aria-label="Previous activity"></div>
+          <div class="terminal-output" id="terminal-output" role="region" aria-label="Current result"></div>
 
           <form class="command-form" id="command-form">
             <label class="visually-hidden" for="command-input">What would you like to do?</label>
             <p class="visually-hidden" id="command-help">
-              B-Counting is ready. Type help to hear what you can do, then press Enter.
+              Type an action and press Enter.
             </p>
             <p class="active-prompt" id="active-prompt" hidden></p>
             <ul class="flow-options" id="flow-options" role="listbox" aria-label="Options" hidden></ul>
