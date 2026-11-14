@@ -11,6 +11,9 @@ coverage/
 !.env.example
 *.log
 
+# Local chat exports and attachments
+chats/
+
 # Editors and operating systems
 .idea/
 .vscode/
