@@ -93,3 +93,48 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+  build-gpui:
+    name: GPUI macOS ${{ matrix.target }}
+    needs: build
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache GPUI build files
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: native-gpui -> target
+          key: gpui-${{ matrix.target }}
+
+      - name: Build GPUI app
+        run: cargo build --manifest-path native-gpui/Cargo.toml --release --locked --target ${{ matrix.target }}
+
+      - name: Package GPUI app
+        run: tar -C native-gpui/target/${{ matrix.target }}/release -czf b-counting-gpui-${{ matrix.target }}.tar.gz b-counting-gpui
+
+      - name: Store GPUI build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: b-counting-gpui-${{ matrix.target }}
+          path: b-counting-gpui-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+
+      - name: Attach GPUI app to release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" "b-counting-gpui-${{ matrix.target }}.tar.gz" --clobber
